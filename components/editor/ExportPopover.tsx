@@ -1,13 +1,13 @@
 "use client";
 
-import { Download, FileCode, FileText, Loader2 } from "lucide-react";
+import { Download, FileCode, FileText, FileType, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
 
-type Format = "markdown" | "clean" | "annotated" | "edited-original";
+type Format = "markdown" | "docx" | "clean" | "annotated";
 
 export function ExportPopover() {
   const meta = useSessionStore((s) => s.meta);
@@ -81,18 +81,18 @@ export function ExportPopover() {
           />
           <div className="border-border bg-background absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-md border shadow-lg">
             <ExportRow
+              icon={<FileType className="h-4 w-4" />}
+              title="Word (.docx) with track changes"
+              description="Edits encoded as native Word revisions — accept/reject in the Review pane. Recommended."
+              busy={busy === "docx"}
+              onClick={() => void exportAs("docx")}
+            />
+            <ExportRow
               icon={<FileCode className="h-4 w-4" />}
               title="Markdown"
               description="Clean text, ideal for pasting into Word/Notion."
               busy={busy === "markdown"}
               onClick={() => void exportAs("markdown")}
-            />
-            <ExportRow
-              icon={<FileText className="h-4 w-4" />}
-              title="Edited Original"
-              description="Original PDF with your edits typeset over the original layout. Recommended."
-              busy={busy === "edited-original"}
-              onClick={() => void exportAs("edited-original")}
             />
             <ExportRow
               icon={<FileText className="h-4 w-4" />}
