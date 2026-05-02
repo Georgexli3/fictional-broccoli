@@ -2,7 +2,7 @@
 
 A fidelity-first AI editor for civil-engineering proposals. Upload a proposal PDF, click any block, and ask AI to tighten it, match firm voice, fix names, or reference past work — every change shown as a track-changes diff before you accept it.
 
-**Live demo:** _to be added at deploy time_
+**Live demo:** <https://fictional-broccoli-mu.vercel.app>
 
 > **Build status:** the full implementation plan and locked decisions live at [`docs/PLAN.md`](./docs/PLAN.md) (mirrored from `~/.claude/plans/this-repository-will-jaunty-swan.md`). All milestones M1–M10 are structurally complete; some features (parse/edit Anthropic calls, full annotated-export bbox accuracy) require deployment with real environment variables to verify end-to-end.
 
