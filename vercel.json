@@ -3,9 +3,12 @@
   "regions": ["iad1"],
   "functions": {
     "app/api/parse/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "app/api/edit/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/export/route.ts": {
       "maxDuration": 60
     }
   }
