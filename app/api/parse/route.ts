@@ -141,11 +141,11 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
   }
 
   // Defensive coercion: Anthropic occasionally returns array-typed tool
-  // fields as JSON-encoded strings rather than actual arrays despite strict
-  // input_schema. Same failure mode build-kb.ts handles.
-  // Sometimes the string is double-encoded — unwrap until we get an array.
-  const toolInput = toolUse.input as Record<string, unknown>;
-  let blocks: unknown = toolInput.blocks;
+  // fields as JSON-encoded strings (sometimes double-encoded) rather than
+  // actual arrays, despite strict input_schema. Build a NEW object instead
+  // of mutating toolUse.input — the SDK freezes its response objects.
+  const rawInput = toolUse.input as Record<string, unknown>;
+  let blocks: unknown = rawInput.blocks;
   for (let i = 0; i < 5 && typeof blocks === "string"; i++) {
     try {
       blocks = JSON.parse(blocks);
@@ -153,14 +153,12 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
       break;
     }
   }
-  if (Array.isArray(blocks)) {
-    toolInput.blocks = blocks;
-  }
+  const toolInput = { ...rawInput, blocks };
 
   const validation = parsedDocumentSchema.safeParse(toolInput);
   if (!validation.success) {
     // Surface the shape we actually saw so we can debug without re-running
-    // the parse. Cheap insurance.
+    // a $0.20 parse just for diagnostics.
     const shape = {
       blocksType: typeof toolInput.blocks,
       blocksIsArray: Array.isArray(toolInput.blocks),
