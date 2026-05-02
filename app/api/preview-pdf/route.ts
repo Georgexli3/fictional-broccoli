@@ -60,7 +60,10 @@ export async function POST(request: Request) {
   }
 
   const historyLen = body.doc.history.filter((h) => h.status === "accepted").length;
-  const pathname = `preview/${body.docHash}/${historyLen}.pdf`;
+  // Version suffix in the cache key. Bump whenever the generator output changes
+  // shape (e.g. V1.6 yellow box → V1.6.1 cover-and-replace) so previously
+  // cached PDFs from older code paths aren't served.
+  const pathname = `preview/${body.docHash}/${historyLen}-v2.pdf`;
 
   // Cache hit: the deterministic pathname has been generated before. Vercel
   // Blob keys are unique within a store, so a single result here is the
