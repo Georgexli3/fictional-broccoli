@@ -48,3 +48,4 @@ tsconfig.tsbuildinfo
 *.zip
 .vercel
 .env*.local
+.playwright-mcp/
