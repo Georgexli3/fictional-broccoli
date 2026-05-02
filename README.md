@@ -192,6 +192,8 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 | 18 | Browser crash loses pending (un-accepted) edit | Pending proposals only persist on Accept |
 | 19 | Mobile / small screen | V1 is desktop-first; banner < 1024px would be V1.5 |
 | 20 | "Reference past work" hallucination | Mitigated by KB grounding + system prompt; not eliminated. Detection requires LLM-judge offline eval (scaffolded; not run for V1) |
+| 21 | **Long / heavy PDFs may exceed 300s Vercel function ceiling** | The AlphaCM Windsor proposal (24-page InDesign with TOC + multi-section + appendices) consistently runs the parse + 1 retry past the 300s Vercel Hobby function maxDuration. Resolved by streaming the parse response so the connection stays alive during long generations — that's the V1.5 streamed-parse item. Dixon SOQ (24 pages, simpler structure) parses cleanly within budget. README's "demo flow" runs against Dixon. |
+| 22 | **Anthropic occasionally returns `blocks` as a JSON-encoded string** (sometimes with malformed inner quotes) | Surfaced in production e2e. Mitigated with multi-unwrap defensive coercion + 2-attempt retry with progressively sharper instruction. Long-term fix: switch tool-use array output to JSONL streaming; that's also the V1.5 streamed-parse work. |
 
 ### What I'd check before letting a paying customer use it
 
@@ -251,6 +253,20 @@ Three suites, all described in §4 — and per Eric they're equally load-bearing
 | **Prompt caching with measured savings** | `cache_control: ephemeral` on KB + base rules. ~50% input-cost reduction on repeated edits. |
 | **Pre-parsed committed KB** | Saves ~$1 + 60s on first deploy; makes the KB inspectable and version-controlled. |
 | **Light CI** (lint + typecheck + Vitest on push/PR) | Operational maturity signal; reviewer sees green checkmarks on clone. |
+| **End-to-end browser testing pass** with full bug-fixing loop | Surfaced 8 real bugs that wouldn't have shown up at typecheck/lint time — see "Bugs found and fixed during e2e" below. |
+
+### Bugs found and fixed during end-to-end production testing
+
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 1 | Upload CORS to `blob.vercel-storage.com` | `@vercel/blob` 0.27.3 was 8 majors behind upstream | Upgraded to 2.3.3 |
+| 2 | Upload still CORS to `vercel.com/api/blob` (private blob store) | Provisioned via dashboard as **Private**, but `access: 'public'` requires a public store | Recreated store as Public via `vercel blob create-store --access public` |
+| 3 | `/api/parse` 504 timeout | Default 60s ceiling too tight for Claude PDF parse on 24-page docs | Bumped maxDuration to 300s |
+| 4 | Parse output failed Zod with `blocks: Expected array, received string` | Anthropic occasionally returns array-typed tool fields as JSON-encoded strings (sometimes double-encoded with malformed inner quotes) despite strict input_schema | Multi-unwrap defensive coercion (loop JSON.parse up to 5 times) + spread-build new object since SDK freezes `tool_use.input` + 2-attempt retry with sharper "emit a TRUE JSON array" instruction |
+| 5 | Re-upload of same PDF: "blob already exists" error | Path is content-addressed by SHA-256, so identical bytes hit the same path on second upload | `allowOverwrite: true` in server token (idempotent re-upload preserves URL + KV cache) |
+| 6 | MECO cover blocks parsed as garbled doubled letter-spacing ("Statement of Statement of Qualifications Qualifications") | Visual letter-spacing + stacked banner repetition in the source PDF | Parse prompt extended with three explicit rules: collapse letter-spaced display titles, dedupe visual repetition, normalize phone/ID intra-word spaces |
+| 7 | PDF.js text-layer intercepting clicks on right-pane Discard / Accept buttons | CSS Grid columns have implicit `min-width: auto`, so the PDF page wrapper (734px at scale 1.2) was blowing out the 1fr column allocation | `min-w-0` on PdfPane and DocPane roots; columns now honor 1fr and clip overflow |
+| 8 | `/favicon.ico` 404 console noise on every page load | No favicon shipped | Added `/public/favicon.svg` (referenced by layout.tsx) |
 
 ---
 
@@ -263,8 +279,9 @@ In priority order:
 1. **Auth (Clerk) + Postgres + multi-user collaboration** (~3–4 hr of the budget) — the unblocking move for everything else. Clerk for sign-in (5 min config, native Vercel Marketplace integration). Postgres for server-authoritative state. Migrate the doc-model's per-block revision stack to an **operation log** (timestamped, attributed) — the design is already forward-compatible. Add per-firm KB upload UI replacing the hardcoded MECO build. Add presence indicators (who's viewing/editing which block) and per-block locks so two users don't edit the same paragraph simultaneously. *This is the platform shift; everything else builds on top.*
 2. **DOCX export** (~1.5 hr) — Buoyant's actual product is Word-integrated. Customers re-styling in their own templates need DOCX more than PDF. Closes the format-preference gap.
 3. **Multi-paragraph chat surface** (~2 hr) — sidebar chat that emits multi-block patches; user reviews via accept-all/some/none gate. Enables "rewrite the whole Project Approach section" asks. Most useful with multi-user since one person can draft a section-level edit while others review.
-4. **Hard-fixture support: multi-column reading order + table fidelity** (~1.5 hr) — pull in LlamaParse or a structured-extraction pre-pass for problem PDFs; fall back to current parser. Improves robustness on partner submissions and recycled docs.
-5. **Posthog wiring + Sentry + per-IP rate limiting on `/api/edit`** (~30 min) — turns the event-logging scaffolding into real production observability and protects spend.
+4. **Streamed `/api/parse` + JSONL block delivery** (~2 hr) — biggest robustness win. Today's non-streamed parse hits Vercel's 300s function ceiling on large multi-section InDesign-built PDFs (e.g. AlphaCM Windsor) and blocks while it's running. Streaming the response keeps the connection alive past the ceiling AND fixes Anthropic's occasional `blocks-as-stringified-JSON` quirk by emitting one block per stream event instead of one giant array via tool-use. Also enables a progressive "blocks appearing as they're parsed" UX in the right pane. **This is the single highest-leverage change for parser reliability.**
+5. **Hard-fixture support: multi-column reading order + table fidelity** (~1.5 hr) — pull in LlamaParse or a structured-extraction pre-pass for problem PDFs; fall back to current parser. Improves robustness on partner submissions and recycled docs.
+6. **Posthog wiring + Sentry + per-IP rate limiting on `/api/edit`** (~30 min) — turns the event-logging scaffolding into real production observability and protects spend.
 
 Threaded comments + @-mentions on edits, role-based permissions (only principals can accept "Reference past work" edits), and PDF redlining for cross-firm partner reviews are the v2.5 backlog these unlock.
 
