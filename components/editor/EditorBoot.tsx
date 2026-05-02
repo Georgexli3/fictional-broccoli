@@ -3,18 +3,19 @@
 import { ArrowLeft, FileText } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { clearSession } from "@/lib/persistence";
 import { flushSession, useSessionStore } from "@/lib/session-store";
 import { track } from "@/lib/track";
 import { formatBytes } from "@/lib/utils";
 
-import { ChangesSidebar } from "./ChangesSidebar";
 import { DocPane } from "./DocPane";
 import { EditorKeyboardShortcuts } from "./EditorKeyboardShortcuts";
 import { ExportPopover } from "./ExportPopover";
 import { PdfPane } from "./PdfPane";
+import { usePaneScrollSync } from "./usePaneScrollSync";
+import { usePreviewPdfRegen } from "./usePreviewPdfRegen";
 
 interface EditorBootProps {
   docHash: string;
@@ -24,15 +25,24 @@ interface EditorBootProps {
  * Hydrates the editor session from localStorage. Bounces home if the
  * requested hash isn't the active session.
  *
- * Mounts the 3-pane layout: PdfPane (left, immutable) + DocPane (center,
- * editable) + ChangesSidebar (right edge, collapsible by hiding when no
- * edits — V1 keeps it always-visible for demo clarity).
+ * V1.6: 2-pane layout — PDF (passive viewer with Original/Edited toggle) +
+ * DocPane (editable blocks with collapsible Changes drawer). The third
+ * `ChangesSidebar` pane was folded into the drawer so the PDF gets more
+ * horizontal room. Bidirectional scroll-sync drives both panes; the
+ * preview-PDF regen hook keeps the Edited render fresh.
  */
 export function EditorBoot({ docHash }: EditorBootProps) {
   const router = useRouter();
   const hydrate = useSessionStore((s) => s.hydrate);
   const meta = useSessionStore((s) => s.meta);
   const [hydrated, setHydrated] = useState(false);
+
+  // Parent-owned refs for the two scroll containers. PdfPane and DocPane
+  // wire these to their inner scroll divs; the sync hook drives both.
+  const pdfScrollRef = useRef<HTMLDivElement | null>(null);
+  const docScrollRef = useRef<HTMLDivElement | null>(null);
+  usePaneScrollSync(pdfScrollRef, docScrollRef);
+  usePreviewPdfRegen();
 
   useEffect(() => {
     const ok = hydrate(docHash);
@@ -41,7 +51,6 @@ export function EditorBoot({ docHash }: EditorBootProps) {
       return;
     }
     setHydrated(true);
-    // Track resume only if the doc has any edits or is "old".
     const stored = useSessionStore.getState();
     if (stored.meta.ready) {
       const ageMinutes = Math.floor(
@@ -58,7 +67,6 @@ export function EditorBoot({ docHash }: EditorBootProps) {
     }
   }, [docHash, hydrate, router]);
 
-  // Flush on unmount so unsaved debounced writes hit localStorage.
   useEffect(() => {
     return () => {
       flushSession();
@@ -101,10 +109,13 @@ export function EditorBoot({ docHash }: EditorBootProps) {
         <ExportPopover />
       </header>
 
-      <div className="border-border grid h-[calc(100vh-49px)] grid-cols-[1fr_1fr_320px] divide-x">
-        <PdfPane url={meta.pdfBlobUrl} />
-        <DocPane blobUrl={meta.pdfBlobUrl} hash={meta.pdfHash} />
-        <ChangesSidebar />
+      <div className="border-border grid h-[calc(100vh-49px)] grid-cols-2 divide-x">
+        <PdfPane url={meta.pdfBlobUrl} scrollContainerRef={pdfScrollRef} />
+        <DocPane
+          blobUrl={meta.pdfBlobUrl}
+          hash={meta.pdfHash}
+          scrollContainerRef={docScrollRef}
+        />
       </div>
     </main>
   );
