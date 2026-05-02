@@ -171,16 +171,20 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
     return { ok: true, data: validation.data };
   }
 
-  // Try up to 3 attempts. Anthropic occasionally returns the `blocks` array
+  // Try up to 2 attempts. Anthropic occasionally returns the `blocks` array
   // as a JSON-encoded string (sometimes with malformed inner quotes that
-  // break JSON.parse). A retry usually produces a clean array.
+  // break JSON.parse); a retry usually produces a clean array. We cap at 2
+  // (down from 3) because each attempt on a complex PDF can take 60-120s,
+  // and 3 attempts on a multi-section doc can exceed Vercel's 300s function
+  // ceiling on the Hobby plan. 2 attempts ≈ 75% success on a 50% success
+  // rate per call — good enough for V1; streaming parse (V1.5) eliminates
+  // the timeout class entirely.
   let lastFailure: AttemptResult | null = null;
   let validation: { success: true; data: z.infer<typeof parsedDocumentSchema> } | null =
     null;
   const retryHints = [
     undefined,
-    "IMPORTANT: Emit `blocks` as an actual JSON array — not as a JSON string. Each block must be a separate object element, not concatenated text.",
-    "CRITICAL: Your previous attempts emitted `blocks` as a string. The schema requires a TRUE JSON array. Output: blocks: [{...}, {...}, ...] not blocks: \"[...]\".",
+    "CRITICAL: Emit `blocks` as a TRUE JSON array — not as a JSON-encoded string. Output blocks: [{...}, {...}] not blocks: \"[...]\". Each block must be a separate object.",
   ];
   for (let attempt = 0; attempt < retryHints.length; attempt++) {
     let result: AttemptResult;
