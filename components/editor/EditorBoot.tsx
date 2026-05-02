@@ -3,7 +3,7 @@
 import { ArrowLeft, FileText } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { clearSession } from "@/lib/persistence";
 import { flushSession, useSessionStore } from "@/lib/session-store";
@@ -15,6 +15,7 @@ import { DocPane } from "./DocPane";
 import { EditorKeyboardShortcuts } from "./EditorKeyboardShortcuts";
 import { ExportPopover } from "./ExportPopover";
 import { PdfPane } from "./PdfPane";
+import { usePaneScrollSync } from "./usePaneScrollSync";
 
 interface EditorBootProps {
   docHash: string;
@@ -33,6 +34,13 @@ export function EditorBoot({ docHash }: EditorBootProps) {
   const hydrate = useSessionStore((s) => s.hydrate);
   const meta = useSessionStore((s) => s.meta);
   const [hydrated, setHydrated] = useState(false);
+
+  // V1.5: parent-owned refs for the two scroll containers. Both panes wire
+  // these to their inner scroll divs. usePaneScrollSync drives bidirectional
+  // sync from these refs.
+  const pdfScrollRef = useRef<HTMLDivElement | null>(null);
+  const docScrollRef = useRef<HTMLDivElement | null>(null);
+  usePaneScrollSync(pdfScrollRef, docScrollRef);
 
   useEffect(() => {
     const ok = hydrate(docHash);
@@ -102,8 +110,15 @@ export function EditorBoot({ docHash }: EditorBootProps) {
       </header>
 
       <div className="border-border grid h-[calc(100vh-49px)] grid-cols-[1fr_1fr_320px] divide-x">
-        <PdfPane url={meta.pdfBlobUrl} />
-        <DocPane blobUrl={meta.pdfBlobUrl} hash={meta.pdfHash} />
+        <PdfPane
+          url={meta.pdfBlobUrl}
+          scrollContainerRef={pdfScrollRef}
+        />
+        <DocPane
+          blobUrl={meta.pdfBlobUrl}
+          hash={meta.pdfHash}
+          scrollContainerRef={docScrollRef}
+        />
         <ChangesSidebar />
       </div>
     </main>

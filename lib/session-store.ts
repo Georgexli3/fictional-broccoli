@@ -36,6 +36,17 @@ interface PendingEdit {
   startedAt: number;
 }
 
+/**
+ * V1.5 view mode for the PDF pane. `"original"` = pristine PDF render
+ * (default, V1 behavior). `"edited"` = render edit-overlay highlights on
+ * top of the PDF for blocks that have accepted edits.
+ *
+ * EPHEMERAL — never persisted to localStorage. Toggle resets on refresh
+ * by design. Derived as `"original"` whenever `doc.history.length === 0`
+ * regardless of the stored value (see `usePdfViewMode` hook below).
+ */
+export type PdfViewMode = "original" | "edited";
+
 interface SessionStore {
   /** Set on hydration once the localStorage session is loaded. */
   meta:
@@ -52,6 +63,18 @@ interface SessionStore {
   selectionPrefill: string | null;
   /** Block currently hovered on the right pane (used by PdfPane to scroll). */
   hoveredBlockId: string | null;
+  /**
+   * V1.5: block currently in the middle band of the DocPane viewport.
+   * Set by `useActiveBlockTracking`. Distinct from `selectedBlockId` (user
+   * intent / clicked) — this is viewport reality / scroll detection.
+   * EPHEMERAL — never persisted.
+   */
+  activeBlockId: string | null;
+  /**
+   * V1.5: PDF view mode. EPHEMERAL — never persisted.
+   * `setPdfViewMode("edited")` is a no-op if `doc.history.length === 0`.
+   */
+  pdfViewMode: PdfViewMode;
   pendingEdit: PendingEdit | null;
 
   // Actions
@@ -70,6 +93,10 @@ interface SessionStore {
   ) => void;
   selectBlock: (blockId: string | null, prefill?: string | null) => void;
   setHoveredBlock: (blockId: string | null) => void;
+  /** V1.5: viewport-reality block tracking. */
+  setActiveBlockId: (blockId: string | null) => void;
+  /** V1.5: toggle Original/Edited PDF view mode. */
+  setPdfViewMode: (mode: PdfViewMode) => void;
   startPendingEdit: (input: {
     blockId: string;
     intent: EditIntent;
@@ -89,6 +116,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   selectedBlockId: null,
   selectionPrefill: null,
   hoveredBlockId: null,
+  activeBlockId: null,
+  pdfViewMode: "original",
   pendingEdit: null,
 
   hydrate(hash) {
@@ -142,15 +171,36 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   selectBlock(blockId, prefill = null) {
+    // V1.5 Convergence rule #1: also set activeBlockId. Without this, the
+    // user clicks a block → DocPane smooth-scrolls → IO sees the
+    // scrolled-to block become "active" mid-flight → fires setActiveBlockId
+    // with a transient block before settling. ChangesSidebar would briefly
+    // focus on the wrong block. Piggy-backing on selectBlock keeps them
+    // converged from the moment the user clicks.
     set({
       selectedBlockId: blockId,
       selectionPrefill: blockId ? prefill : null,
       pendingEdit: null,
+      activeBlockId: blockId ?? get().activeBlockId,
     });
   },
 
   setHoveredBlock(blockId) {
     set({ hoveredBlockId: blockId });
+  },
+
+  setActiveBlockId(blockId) {
+    set({ activeBlockId: blockId });
+  },
+
+  setPdfViewMode(mode) {
+    // Refuse to flip to "edited" when there's nothing to show. The
+    // ViewModeToggle UI is also disabled in this state, but defense in depth.
+    const doc = get().doc;
+    if (mode === "edited" && (!doc || doc.history.length === 0)) {
+      return;
+    }
+    set({ pdfViewMode: mode });
   },
 
   startPendingEdit({ blockId, intent, userPrompt }) {
@@ -321,6 +371,17 @@ function persist(state: SessionStore) {
 /** Force-flush a pending debounced write. Call before navigation. */
 export function flushSession() {
   flushSessionWrite();
+}
+
+/**
+ * Derived hook: `pdfViewMode` is forced to `"original"` whenever there are
+ * zero accepted edits. This handles the "user undid all edits while in
+ * Edited mode" case so the UI never shows an empty Edited view.
+ */
+export function usePdfViewMode(): PdfViewMode {
+  const stored = useSessionStore((s) => s.pdfViewMode);
+  const historyLength = useSessionStore((s) => s.doc?.history.length ?? 0);
+  return historyLength === 0 ? "original" : stored;
 }
 
 /** Helper: get the currently selected block, if any. */

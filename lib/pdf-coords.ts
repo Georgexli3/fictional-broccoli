@@ -68,3 +68,25 @@ export function pdfJsBboxToPdfLibRect(
     height: bbox.h,
   };
 }
+
+/**
+ * (Pattern F from the V1.5 plan.)
+ *
+ * Convert a PDF.js bbox at scale=1 into the CSS positioning style for an
+ * absolutely-positioned overlay sitting inside a `relative` page wrapper that
+ * has been laid out at `scale`. The page wrapper's width/height already
+ * scales linearly, so children at `left: bbox.x * scale` land correctly.
+ *
+ * Pure function. Unit-testable. Used by `PdfEditOverlay`.
+ */
+export function bboxToOverlayStyle(
+  bbox: { x: number; y: number; w: number; h: number },
+  scale: number,
+): { left: string; top: string; width: string; height: string } {
+  return {
+    left: `${bbox.x * scale}px`,
+    top: `${bbox.y * scale}px`,
+    width: `${bbox.w * scale}px`,
+    height: `${bbox.h * scale}px`,
+  };
+}

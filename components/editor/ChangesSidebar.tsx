@@ -1,6 +1,7 @@
 "use client";
 
 import { Pencil, Undo2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { computeDiff } from "@/lib/diff";
 import { useSessionStore } from "@/lib/session-store";
@@ -31,6 +32,25 @@ export function ChangesSidebar({ className }: ChangesSidebarProps) {
   const doc = useSessionStore((s) => s.doc);
   const undo = useSessionStore((s) => s.undo);
   const selectBlock = useSessionStore((s) => s.selectBlock);
+  // V1.5: focus tracking — selectedBlockId (user intent) wins over
+  // activeBlockId (viewport reality). When focus changes, scroll the
+  // topmost matching entry into view + ring-highlight all matching rows.
+  const selectedBlockId = useSessionStore((s) => s.selectedBlockId);
+  const activeBlockId = useSessionStore((s) => s.activeBlockId);
+  const focusedBlockId = selectedBlockId ?? activeBlockId;
+  const scrollListRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!focusedBlockId) return;
+    const list = scrollListRef.current;
+    if (!list) return;
+    // The data-history-block-id attribute is set on each entry button below.
+    const target = list.querySelector<HTMLElement>(
+      `[data-history-block-id="${focusedBlockId}"]`,
+    );
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [focusedBlockId]);
 
   if (!doc) return null;
 
@@ -62,7 +82,10 @@ export function ChangesSidebar({ className }: ChangesSidebarProps) {
         )}
       </header>
 
-      <div className="flex-1 space-y-2 overflow-auto px-3 py-3 text-xs">
+      <div
+        ref={scrollListRef}
+        className="flex-1 space-y-2 overflow-auto px-3 py-3 text-xs"
+      >
         {accepted.length === 0 && (
           <div className="text-muted-foreground/70 py-6 text-center">
             Accepted edits will appear here.
@@ -71,12 +94,14 @@ export function ChangesSidebar({ className }: ChangesSidebarProps) {
 
         {accepted.map((entry, i) => {
           const isMostRecent = i === 0;
+          const isFocused = entry.blockId === focusedBlockId;
           const block = doc.blocks.find((b) => b.id === entry.blockId);
           const diff = computeDiff(entry.beforeText, entry.afterText);
           return (
             <button
               key={entry.id}
               type="button"
+              data-history-block-id={entry.blockId}
               onClick={() => {
                 selectBlock(entry.blockId);
                 // Scroll the block into view, if visible.
@@ -85,7 +110,10 @@ export function ChangesSidebar({ className }: ChangesSidebarProps) {
                 );
                 node?.scrollIntoView({ behavior: "smooth", block: "center" });
               }}
-              className="border-border hover:bg-muted/50 group block w-full rounded-md border bg-background px-3 py-2 text-left transition"
+              className={cn(
+                "border-border hover:bg-muted/50 group block w-full rounded-md border bg-background px-3 py-2 text-left transition",
+                isFocused && "ring-1 ring-accent/60 bg-accent/5",
+              )}
             >
               <div className="text-muted-foreground mb-1 flex items-center gap-1">
                 <Pencil className="h-3 w-3" />

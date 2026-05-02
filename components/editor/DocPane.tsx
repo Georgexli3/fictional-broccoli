@@ -1,18 +1,25 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { currentText } from "@/lib/doc-model";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 
 import { BlockView } from "./BlockView";
+import { useActiveBlockTracking } from "./useActiveBlockTracking";
 
 interface DocPaneProps {
   blobUrl: string;
   hash: string;
   className?: string;
+  /**
+   * V1.5: parent-owned ref pointed at the inner scroll container. EditorBoot
+   * uses this to drive scroll-sync. Optional so existing call sites that
+   * don't need scroll-sync still work.
+   */
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
 }
 
 type ParseState =
@@ -27,10 +34,21 @@ type ParseState =
  * Pulls parsed model from /api/parse on mount. Once loaded, the doc lives
  * in the session store; this component just renders blocks from the store.
  */
-export function DocPane({ blobUrl, hash, className }: DocPaneProps) {
+export function DocPane({
+  blobUrl,
+  hash,
+  className,
+  scrollContainerRef: externalRef,
+}: DocPaneProps) {
   const doc = useSessionStore((s) => s.doc);
   const setDoc = useSessionStore((s) => s.setDoc);
   const [state, setState] = useState<ParseState>({ status: "idle" });
+
+  // Inner ref for the scroll container. If parent passed one, mirror it.
+  const internalRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = externalRef ?? internalRef;
+
+  useActiveBlockTracking(scrollContainerRef);
 
   // Fetch parse on mount, unless we already have a doc in the store
   // (resuming from localStorage).
@@ -127,7 +145,10 @@ export function DocPane({ blobUrl, hash, className }: DocPaneProps) {
           )}
         </div>
       </header>
-      <div className="flex-1 space-y-3 overflow-auto px-6 py-4">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 space-y-3 overflow-auto px-6 py-4"
+      >
         {doc.blocks.map((block, i) => {
           const prev = doc.blocks[i - 1];
           const next = doc.blocks[i + 1];

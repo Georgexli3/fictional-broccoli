@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { PdfPage } from "./PdfPage";
 import { useBboxResolution } from "./useBboxResolution";
 import { usePdfHoverScroll } from "./usePdfHoverScroll";
+import { ViewModeToggle } from "./ViewModeToggle";
 
 import "pdfjs-dist/web/pdf_viewer.css";
 import "./pdf-pane.css";
@@ -26,6 +27,12 @@ const SCALE_STEP = 0.15;
 interface PdfPaneProps {
   url: string;
   className?: string;
+  /**
+   * V1.5: parent-owned ref pointed at the inner scroll container. EditorBoot
+   * uses this to drive scroll-sync. Optional so existing call sites that
+   * don't need scroll-sync still work.
+   */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -39,12 +46,19 @@ interface PdfPaneProps {
  * text spans, so browser-native text selection works on the rendered PDF.
  * Selection events are surfaced (M8 hover-link wires them to the right pane).
  */
-export function PdfPane({ url, className }: PdfPaneProps) {
+export function PdfPane({
+  url,
+  className,
+  scrollContainerRef: externalRef,
+}: PdfPaneProps) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState(1.2);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const internalRef = useRef<HTMLDivElement | null>(null);
+  // If parent passes a ref, use it; otherwise fall back to local ref.
+  // The element below assigns BOTH refs to keep parent in sync.
+  const containerRef = externalRef ?? internalRef;
   usePdfHoverScroll(containerRef);
   useBboxResolution(doc);
 
@@ -144,15 +158,18 @@ interface ToolbarProps {
 
 function Toolbar({ scale, onZoom, pageCount }: ToolbarProps) {
   return (
-    <div className="border-border bg-background flex items-center justify-between border-b px-4 py-2 text-sm">
-      <div className="text-muted-foreground">
-        {pageCount > 0 ? (
-          <>
-            {pageCount} page{pageCount === 1 ? "" : "s"}
-          </>
-        ) : (
-          "—"
-        )}
+    <div className="border-border bg-background flex items-center justify-between gap-3 border-b px-4 py-2 text-sm">
+      <div className="text-muted-foreground flex items-center gap-3">
+        <span>
+          {pageCount > 0 ? (
+            <>
+              {pageCount} page{pageCount === 1 ? "" : "s"}
+            </>
+          ) : (
+            "—"
+          )}
+        </span>
+        <ViewModeToggle />
       </div>
       <div className="flex items-center gap-1">
         <button
