@@ -4,7 +4,7 @@ import { z } from "zod";
 import { documentModelSchema } from "@/lib/doc-model-zod";
 import { exportAnnotatedPdf } from "@/lib/export/annotated";
 import { exportCleanPdf } from "@/lib/export/clean";
-import { buildEditedPreviewPdf } from "@/lib/export/edited-preview";
+import { exportDocx } from "@/lib/export/docx";
 import { exportMarkdown } from "@/lib/export/markdown";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +12,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const requestBodySchema = z.object({
-  format: z.enum(["markdown", "clean", "annotated", "edited-original"]),
+  format: z.enum(["markdown", "docx", "clean", "annotated"]),
   title: z.string().default("Edited Proposal"),
   doc: documentModelSchema,
-  /** Required for 'annotated' and 'edited-original' formats; ignored otherwise. */
+  /** Required for 'annotated' format; ignored otherwise. */
   blobUrl: z.string().url().optional(),
 });
 
@@ -66,6 +66,22 @@ export async function POST(request: Request) {
         },
       });
     }
+    case "docx": {
+      const bytes = await exportDocx(body.doc, body.title);
+      return new Response(
+        new Blob([bytes as unknown as ArrayBuffer], {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }),
+        {
+          headers: {
+            "Content-Type":
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "Content-Disposition": `attachment; filename="${slug(body.title)}-edited.docx"`,
+            "Cache-Control": "no-store",
+          },
+        },
+      );
+    }
     case "annotated": {
       if (!body.blobUrl) {
         return NextResponse.json(
@@ -105,49 +121,6 @@ export async function POST(request: Request) {
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="${slug(body.title)}-annotated.pdf"`,
-          "Cache-Control": "no-store",
-        },
-      });
-    }
-    case "edited-original": {
-      if (!body.blobUrl) {
-        return NextResponse.json(
-          { ok: false, error: "Edited Original export requires blobUrl" },
-          { status: 400 },
-        );
-      }
-      let originalBytes: ArrayBuffer;
-      try {
-        const response = await fetch(body.blobUrl);
-        if (!response.ok) {
-          return NextResponse.json(
-            {
-              ok: false,
-              error: `Failed to fetch original PDF: HTTP ${response.status}`,
-            },
-            { status: 502 },
-          );
-        }
-        originalBytes = await response.arrayBuffer();
-      } catch (error) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `Fetch failed: ${error instanceof Error ? error.message : String(error)}`,
-          },
-          { status: 502 },
-        );
-      }
-
-      const bytes = await buildEditedPreviewPdf({
-        originalPdfBytes: originalBytes,
-        doc: body.doc,
-        options: { showIndicator: false },
-      });
-      return new Response(new Blob([bytes as unknown as ArrayBuffer], { type: "application/pdf" }), {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `attachment; filename="${slug(body.title)}-edited.pdf"`,
           "Cache-Control": "no-store",
         },
       });

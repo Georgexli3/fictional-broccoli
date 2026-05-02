@@ -31,6 +31,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "diff-match-patch": "^1.0.5",
+    "docx": "^9.6.1",
     "lucide-react": "^0.474.0",
     "nanoid": "^5.0.9",
     "next": "^15.1.4",
