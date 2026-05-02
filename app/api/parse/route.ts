@@ -140,7 +140,20 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
     );
   }
 
-  const validation = parsedDocumentSchema.safeParse(toolUse.input);
+  // Defensive coercion: Anthropic occasionally returns array-typed tool
+  // fields as JSON-encoded strings rather than actual arrays despite strict
+  // input_schema. Same failure mode build-kb.ts handles.
+  const toolInput = toolUse.input as Record<string, unknown>;
+  if (typeof toolInput.blocks === "string") {
+    try {
+      const parsed = JSON.parse(toolInput.blocks);
+      if (Array.isArray(parsed)) toolInput.blocks = parsed;
+    } catch {
+      // fall through; Zod will report the schema error below
+    }
+  }
+
+  const validation = parsedDocumentSchema.safeParse(toolInput);
   if (!validation.success) {
     return NextResponse.json(
       {
