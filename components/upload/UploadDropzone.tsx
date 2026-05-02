@@ -51,10 +51,9 @@ export function UploadDropzone() {
           uploadPct: 0,
         });
 
-        // Path is content-addressed by hash, so re-upload of the same PDF
-        // would normally fail with "blob already exists". `allowOverwrite`
-        // makes re-uploads idempotent (identical bytes overwrite themselves)
-        // — the user shouldn't see an error for uploading the same file twice.
+        // Path is content-addressed by hash; re-upload of the same PDF
+        // should be idempotent. `allowOverwrite` is set server-side in the
+        // `/api/blob-token` route handler.
         const blob = await upload(`proposals/${hash}.pdf`, file, {
           access: "public",
           handleUploadUrl: "/api/blob-token",
@@ -64,7 +63,6 @@ export function UploadDropzone() {
             size: file.size,
             filename: file.name,
           }),
-          allowOverwrite: true,
           onUploadProgress: (event) => {
             setProgress((prev) => ({
               ...prev,

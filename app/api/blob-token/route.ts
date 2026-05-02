@@ -42,6 +42,10 @@ export async function POST(request: Request) {
           allowedContentTypes: ["application/pdf"],
           maximumSizeInBytes: 32 * 1024 * 1024,
           tokenPayload: clientPayload ?? "",
+          // Path is content-addressed by hash, so re-uploading the same PDF
+          // would otherwise hit "blob already exists". Identical bytes
+          // overwrite themselves; URL stays stable; KV parse cache still hits.
+          allowOverwrite: true,
         };
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
