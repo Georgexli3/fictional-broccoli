@@ -12,8 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "build:kb": "tsx scripts/build-kb.ts",
-    "verify:deploy": "tsx scripts/verify-deploy.ts",
+    "build:kb": "tsx --env-file=.env.local scripts/build-kb.ts",
+    "verify:deploy": "tsx --env-file=.env.local scripts/verify-deploy.ts",
     "format": "prettier --write .",
     "postinstall": "node scripts/copy-pdf-worker.mjs"
   },

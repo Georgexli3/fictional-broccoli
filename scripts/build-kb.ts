@@ -216,7 +216,46 @@ async function distillProposal(
   if (!toolUse || toolUse.type !== "tool_use") {
     throw new Error("Model did not emit emit_kb_distillation");
   }
-  return toolUse.input as DistillationResult;
+
+  const raw = toolUse.input as Record<string, unknown>;
+  return normalizeDistillation(raw);
+}
+
+/**
+ * Defensive coercion: Claude occasionally returns array-typed tool fields as
+ * JSON strings rather than actual arrays, despite the input_schema constraint.
+ * We unwrap both `entities` (which are an object of arrays) and `snippets`
+ * (an array of objects) when that happens.
+ */
+function normalizeDistillation(raw: Record<string, unknown>): DistillationResult {
+  const snippets = coerceArray<DistillationResult["snippets"][number]>(
+    raw.snippets,
+    "snippets",
+  );
+  const entities = raw.entities as DistillationResult["entities"];
+  const abstract = raw.abstract as DistillationResult["abstract"];
+  if (!abstract || typeof abstract !== "object") {
+    throw new Error("Distillation missing 'abstract' object");
+  }
+  if (!entities || typeof entities !== "object") {
+    throw new Error("Distillation missing 'entities' object");
+  }
+  return { abstract, entities, snippets };
+}
+
+function coerceArray<T>(value: unknown, fieldName: string): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed as T[];
+    } catch {
+      // fall through
+    }
+  }
+  throw new Error(
+    `Distillation field '${fieldName}' is not a usable array (got ${typeof value}). Re-run with --force or --only=<file> to retry just this PDF.`,
+  );
 }
 
 const VOICE_SYSTEM_PROMPT = `You are distilling the voice of a single engineering consulting firm into a concise style guide. Read the firm-voice exemplars and produce a 600-1200 word markdown guide.
@@ -237,10 +276,18 @@ async function synthesizeVoice(
   client: Anthropic,
   exemplars: Array<{ title: string; snippets: DistillationResult["snippets"] }>,
 ): Promise<string> {
-  const blob = exemplars
+  const usable = exemplars.filter(
+    (e) => Array.isArray(e.snippets) && e.snippets.length > 0,
+  );
+  if (usable.length === 0) {
+    throw new Error("No usable exemplars after filtering bad snippets");
+  }
+  const blob = usable
     .map(
       (e) =>
-        `## ${e.title}\n\n${e.snippets.map((s) => `[${s.sectionType}]\n${s.text}`).join("\n\n")}`,
+        `## ${e.title}\n\n${e.snippets
+          .map((s) => `[${s.sectionType}]\n${s.text}`)
+          .join("\n\n")}`,
     )
     .join("\n\n---\n\n");
 
@@ -343,14 +390,19 @@ async function main() {
 
     if (allExist && !args.force) {
       console.log(`✓ ${file}  (cached, hash=${hash.slice(0, 8)})`);
-      // Still need exemplars for voice synthesis.
+      // Still need exemplars for voice synthesis. Defensively coerce in case
+      // an earlier build wrote snippets as a JSON string instead of an array.
       try {
-        exemplars.push({
-          title: file,
-          snippets: JSON.parse(readFileSync(snippetsPath, "utf8")) as DistillationResult["snippets"],
-        });
-      } catch {
-        // ignore
+        const parsed = JSON.parse(readFileSync(snippetsPath, "utf8"));
+        const snippets = coerceArray<DistillationResult["snippets"][number]>(
+          parsed,
+          "snippets",
+        );
+        exemplars.push({ title: file, snippets });
+      } catch (error) {
+        console.warn(
+          `  ⚠ Cached snippets for ${file} unreadable: ${error instanceof Error ? error.message : error}`,
+        );
       }
       continue;
     }
