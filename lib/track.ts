@@ -30,7 +30,10 @@ export type TrackEvent =
   | { name: "edit_discarded"; intent: string; blockId: string }
   | { name: "edit_undone" }
   | { name: "edit_redone" }
-  | { name: "export_clicked"; format: "annotated" | "clean" | "markdown" }
+  | {
+      name: "export_clicked";
+      format: "annotated" | "clean" | "markdown" | "edited-original";
+    }
   | { name: "session_resumed"; ageMinutes: number; editCount: number }
   | { name: "error_surfaced"; kind: string; messageHash: string };
 

@@ -7,7 +7,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
 
-type Format = "markdown" | "clean" | "annotated";
+type Format = "markdown" | "clean" | "annotated" | "edited-original";
 
 export function ExportPopover() {
   const meta = useSessionStore((s) => s.meta);
@@ -89,15 +89,22 @@ export function ExportPopover() {
             />
             <ExportRow
               icon={<FileText className="h-4 w-4" />}
+              title="Edited Original"
+              description="Original PDF with your edits typeset over the original layout. Recommended."
+              busy={busy === "edited-original"}
+              onClick={() => void exportAs("edited-original")}
+            />
+            <ExportRow
+              icon={<FileText className="h-4 w-4" />}
               title="Clean PDF"
-              description="Fresh PDF from the edited doc model. No original branding."
+              description="Fresh PDF rebuilt from the edited doc model. No original branding."
               busy={busy === "clean"}
               onClick={() => void exportAs("clean")}
             />
             <ExportRow
               icon={<FileText className="h-4 w-4" />}
               title="Annotated Original"
-              description="Original PDF with edit markers + a Changes Summary appendix. Markers depend on parser bbox accuracy."
+              description="Original layout + edit markers + Changes Summary. For review/redlining."
               busy={busy === "annotated"}
               onClick={() => void exportAs("annotated")}
             />
