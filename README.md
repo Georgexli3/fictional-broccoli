@@ -134,6 +134,8 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 
 **Resume:** on home-page boot, the resume banner reads localStorage and offers to continue. One of the brief's "UX details that matter" — a 20-edit session shouldn't vanish on a refresh.
 
+**Designed with multi-user V2 in mind.** Eric confirmed proposals are typically worked on by multiple roles (proposal writer, engineers, principals). V1 is single-user, but the doc-model's per-block revision stack design is forward-compatible with an op-log / CRDT model: each `Revision` carries a stable `editId` and timestamps, so the migration path to a server-authoritative state with presence + multi-user merging is clean. localStorage will swap for server-stored sessions, and the persistence boundary in `lib/persistence.ts` is the single swap point.
+
 ---
 
 ## 3. What I cut and why
@@ -144,7 +146,7 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 | **DOCX export** | Buoyant's actual product is Word-integrated, so DOCX is V2-correct. But the brief's stretch goal lists *PDF*, and ~1 hr of DOCX layout API spent on a less-aligned format vs. shipping annotated-PDF properly. |
 | **In-place PDF text replacement** | Silent-failure modes (font subsetting, glyph encoding, position drift) violate fidelity-first. Annotated overlay gets 95% of value with zero silent failures. |
 | **Hard-fixture multi-column / tables** | A real fix is parser-level (LlamaParse / structured extraction pre-pass), not an MVP feature. Documented as known limitation in §4. |
-| **Auth + multi-user / Postgres** | Single-user demo. Auth is a 1-hr scope creep that demos nothing for the brief. KV covers our needs. |
+| **Auth + multi-user / Postgres** | Single-user V1 demo. Auth is a 1-hr scope creep that demos nothing for the brief. KV covers our V1 needs. **Eric confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
 | **Vector retrieval / embeddings for KB** | At 5 KB items, similarity search is noise. Inlined + cached is correct at this scale. |
 | **Component tests / visual regression / Playwright in CI** | Manual UI testing is faster for this surface; CI stays lint+typecheck+Vitest. |
 | **Real analytics backend** | Event vocabulary is scaffolded (`lib/track.ts` + `/api/events`). Posthog wiring is a 30-min V1.5 task. |
@@ -193,13 +195,17 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 
 ### What I'd check before letting a paying customer use it
 
+**Per Eric's clarification, all four rejection categories matter equally** — hallucination, wrong tone, lost information, and "sounded like AI" are equally serious failure modes for proposal editing. The eval suite is built to test all four, none deprioritized.
+
 Three offline evals, gating any rollout:
 
-1. **Edit-faithfulness LLM-judge** (50 sampled edits across all 4 chips + free-form): does the edit add unsupported claims, lose information, or violate the user's intent? Threshold: <2% with new-claim hallucinations, <5% with information-loss issues.
+1. **Edit-faithfulness LLM-judge** (50 sampled edits across all 4 chips + free-form): does the edit add unsupported claims (hallucination), lose information, or violate the user's intent? Threshold: <2% with new-claim hallucinations, <5% with information-loss issues.
 2. **Name-fidelity synthetic test** (30 paragraphs with named entities): run "Tighten" + "Match firm voice" — every named entity must survive unchanged. Threshold: 100%.
 3. **Annotated-export accuracy geometric check** (10 docs): markers must land within ±20pt of expected bbox. Threshold: ≥95%.
 
-Plus the production observability described in §5 to watch all three in the wild.
+A fourth eval ("voice-match" — does the edit *sound* like the firm? LLM-judge against the synthesized voice doc) is the natural follow-on once we ship Posthog and have real 👎-with-reason labels to fine-tune against.
+
+Plus the production observability described in §5 to watch all four failure modes in the wild.
 
 ---
 
@@ -227,7 +233,7 @@ V1 ships the event vocabulary (`lib/track.ts`) and a no-op `/api/events` endpoin
 
 ### Layer 3 — Offline evals (run before any prompt change ships)
 
-Three suites, all described in §4. V1 ships the **name-fidelity** suite as the one-suite proof of pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded).
+Three suites, all described in §4 — and per Eric they're equally load-bearing. V1 ships the **name-fidelity** suite as the one-suite proof-of-pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded). Edit-faithfulness and annotated-accuracy are the two next-up suites; both are scaffolded and would land before paying customers.
 
 ---
 
@@ -250,26 +256,27 @@ Three suites, all described in §4. V1 ships the **name-fidelity** suite as the 
 
 ## 7. What I'd build next given another 8 hours
 
+Eric confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps from low-priority to **#1**.
+
 In priority order:
 
-1. **DOCX export** (~1.5 hr) — closes the loop with Buoyant's actual product workflow (Word-integrated). Customers who own the source files would prefer DOCX over PDF for re-styling.
-2. **Multi-paragraph chat surface** (~2.5–3 hr) — sidebar chat that emits multi-block patches; user reviews via accept-all/some/none gate. Enables "rewrite the whole Project Approach section" style asks.
-3. **Hard-fixture support: multi-column reading order + table fidelity** (~1.5–2 hr) — pull in LlamaParse or a structured-extraction pre-pass for problem PDFs, falling back to the current parser. Improves robustness on partner submissions and recycled docs.
-4. **Auth (Clerk) + Postgres + per-firm KB upload** (~2 hr) — enables team workflows, persistent multi-device sessions, and the V2 product shape where each firm uploads its own past proposals.
-5. **Posthog wiring + Sentry + per-IP rate limiting on `/api/edit`** (~30 min remaining) — turns the event-logging scaffolding into real production observability.
+1. **Auth (Clerk) + Postgres + multi-user collaboration** (~3–4 hr of the budget) — the unblocking move for everything else. Clerk for sign-in (5 min config, native Vercel Marketplace integration). Postgres for server-authoritative state. Migrate the doc-model's per-block revision stack to an **operation log** (timestamped, attributed) — the design is already forward-compatible. Add per-firm KB upload UI replacing the hardcoded MECO build. Add presence indicators (who's viewing/editing which block) and per-block locks so two users don't edit the same paragraph simultaneously. *This is the platform shift; everything else builds on top.*
+2. **DOCX export** (~1.5 hr) — Buoyant's actual product is Word-integrated. Customers re-styling in their own templates need DOCX more than PDF. Closes the format-preference gap.
+3. **Multi-paragraph chat surface** (~2 hr) — sidebar chat that emits multi-block patches; user reviews via accept-all/some/none gate. Enables "rewrite the whole Project Approach section" asks. Most useful with multi-user since one person can draft a section-level edit while others review.
+4. **Hard-fixture support: multi-column reading order + table fidelity** (~1.5 hr) — pull in LlamaParse or a structured-extraction pre-pass for problem PDFs; fall back to current parser. Improves robustness on partner submissions and recycled docs.
+5. **Posthog wiring + Sentry + per-IP rate limiting on `/api/edit`** (~30 min) — turns the event-logging scaffolding into real production observability and protects spend.
+
+Threaded comments + @-mentions on edits, role-based permissions (only principals can accept "Reference past work" edits), and PDF redlining for cross-firm partner reviews are the v2.5 backlog these unlock.
 
 ---
 
 ## Open questions for Eric
 
-Two were sent early per the brief's encouragement:
+All three are now answered:
 
-1. **What's typically wrong when customers reject AI suggestions?** (hallucination / wrong tone / lost info / "sounded like AI"). Routes which offline eval to ship first and which guardrail in the system prompt to lean hardest on.
-2. **Is v2 single-user or multi-user collaborative?** Determines whether auth+Postgres jumps from priority #4 to #1 in the V2 list. V1 is single-user regardless.
-
-Plus one resolved during build:
-
-3. **What's in the KB?** Resolved by the CTO: past proposals are the KB. We use the 5 MECO PDFs with the active doc excluded by hash.
+1. **What's typically wrong when customers reject AI suggestions?** *Eric: "Everything you've brought up are things we've built into Buoyant bc they're all real concerns and equally important."* All four (hallucination, wrong tone, lost info, "sounded like AI") matter equally. We've kept the system-prompt guardrails for all four (no new claims, voice grounding, no info loss, minimum-edit) and weighted the eval suite to cover all four — see §4 and §5 (Layer 3).
+2. **Is v2 single-user or multi-user collaborative?** *Eric: "Multi-user as proposals are typically worked on by multiple people at all firms ie proposals writer, engineers, principles, etc."* V2 is multi-user. The §7 priority order now puts auth + Postgres + collab data layer at #1; we designed V1's per-block revision stack to migrate cleanly to an operation log (attributed, timestamped). The persistence boundary in `lib/persistence.ts` is the single swap point.
+3. **What's in the KB?** *Eric: "A large part of a customer's KB is past proposals … we've included 5 proposals for MECO. You can pick one as the proposal you're working on and treat the others as past proposals in the knowledge base."* We use the 5 MECO PDFs at `ExampleProposals/MECOProposals/`, with the active doc excluded by SHA-256 hash at runtime so it's never fed to itself as past-work context.
 
 ---
 
