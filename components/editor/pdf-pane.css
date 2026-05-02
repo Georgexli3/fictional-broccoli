@@ -1,0 +1,17 @@
+/**
+ * PDF.js text-layer overrides.
+ *
+ * pdfjs-dist's pdf_viewer.css ships sensible defaults for text-layer
+ * positioning and selection highlighting. We just tone down the selection
+ * color to match our accent palette, and ensure the text layer doesn't
+ * intercept clicks on the canvas underneath unless the user is selecting.
+ */
+
+.textLayer {
+  pointer-events: auto;
+}
+
+.textLayer ::selection {
+  background: oklch(0.62 0.18 250 / 0.25);
+  color: transparent;
+}

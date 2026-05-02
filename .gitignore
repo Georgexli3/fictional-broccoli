@@ -1,0 +1,48 @@
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+*.swp
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Testing
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Misc
+*.log
+*.pid
+.turbo/
+.vercel/
+.DS_Store
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Temp PDF research artifact (from planning phase)
+/tmp/_pdf_research_venv/
+
+# KB build artifacts that should regenerate
+# (we DO commit kb/parsed/, kb/abstracts/, kb/entities/, kb/snippets/, kb/voice.synthesized.md, kb/manifest.json)
+
+# Zip artifacts
+*.zip

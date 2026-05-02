@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["iad1"],
+  "functions": {
+    "app/api/parse/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/edit/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
