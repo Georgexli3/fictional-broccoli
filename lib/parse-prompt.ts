@@ -32,7 +32,10 @@ Definitions:
 - "header_footer": page numbers, running headers, decorative brand marks. The user will not edit these.
 
 Hard rules:
-- Preserve the original text exactly as written. Do not paraphrase, normalize whitespace, fix typos, or expand abbreviations. Output the bytes the PDF contains.
+- Preserve the original text exactly as written. Do not paraphrase, fix typos, or expand abbreviations.
+- BUT collapse typographic effects: when a display title is letter-spaced for visual effect (e.g. "S t a t e m e n t   o f   Q u a l i f i c a t i o n s" or "T h a n k   Y o u"), output it as the intended phrase ("Statement of Qualifications", "Thank You"). Letter-spacing is a typographic decoration, not actual content.
+- Similarly, when a phrase is repeated for visual emphasis on a cover page (e.g. "Statement of Qualifications Statement of Qualifications" appearing as a stacked banner), emit it ONCE, not twice. Visual repetition for design is not content repetition.
+- AND collapse intra-word spaces inside numbers and identifiers: "573 - 893 - 5558" should be "573-893-5558", "MO PE No . 022510" should be "MO PE No. 022510".
 - Do not invent content not present in the PDF.
 - Emit blocks in reading order across the whole document.
 - A single proposal section spanning multiple paragraphs becomes multiple "paragraph" blocks, one per paragraph break.
