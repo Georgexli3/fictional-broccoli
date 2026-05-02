@@ -77,7 +77,7 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
   }
 
   // 2. Send to Claude.
-  let pdfSource;
+  let pdfSource: Awaited<ReturnType<typeof buildPdfDocumentSource>>;
   try {
     pdfSource = await buildPdfDocumentSource({
       blobUrl: body.blobUrl,
@@ -95,9 +95,17 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
     );
   }
 
-  let response;
-  try {
-    response = await anthropic.messages.create({
+  // Helper: do one Anthropic parse attempt and return validated doc model
+  // (or null + diagnostic shape if the attempt's output can't be coerced).
+  type AttemptResult =
+    | { ok: true; data: z.infer<typeof parsedDocumentSchema> }
+    | { ok: false; reason: string; shape: Record<string, unknown> };
+
+  async function attemptParse(extraInstruction?: string): Promise<AttemptResult> {
+    const userText = extraInstruction
+      ? `${PARSE_USER_PROMPT}\n\n${extraInstruction}`
+      : PARSE_USER_PROMPT;
+    const response = await anthropic.messages.create({
       model: DEFAULT_MODEL,
       max_tokens: 16384,
       system: PARSE_SYSTEM_PROMPT,
@@ -108,75 +116,102 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
           role: "user",
           content: [
             pdfSource.documentContent,
-            { type: "text", text: PARSE_USER_PROMPT },
+            { type: "text", text: userText },
           ],
         },
       ],
     });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: `Anthropic call failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      },
-      { status: 502 },
-    );
-  }
 
-  // 3. Extract + validate the tool call.
-  const toolUse = response.content.find(
-    (block) =>
-      block.type === "tool_use" && block.name === "emit_document_structure",
-  );
-  if (!toolUse || toolUse.type !== "tool_use") {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Model did not emit emit_document_structure",
-      },
-      { status: 502 },
+    const toolUse = response.content.find(
+      (block) =>
+        block.type === "tool_use" && block.name === "emit_document_structure",
     );
-  }
-
-  // Defensive coercion: Anthropic occasionally returns array-typed tool
-  // fields as JSON-encoded strings (sometimes double-encoded) rather than
-  // actual arrays, despite strict input_schema. Build a NEW object instead
-  // of mutating toolUse.input — the SDK freezes its response objects.
-  const rawInput = toolUse.input as Record<string, unknown>;
-  let blocks: unknown = rawInput.blocks;
-  for (let i = 0; i < 5 && typeof blocks === "string"; i++) {
-    try {
-      blocks = JSON.parse(blocks);
-    } catch {
-      break;
+    if (!toolUse || toolUse.type !== "tool_use") {
+      return {
+        ok: false,
+        reason: "Model did not emit emit_document_structure",
+        shape: {},
+      };
     }
-  }
-  const toolInput = { ...rawInput, blocks };
 
-  const validation = parsedDocumentSchema.safeParse(toolInput);
-  if (!validation.success) {
-    // Surface the shape we actually saw so we can debug without re-running
-    // a $0.20 parse just for diagnostics.
-    const shape = {
-      blocksType: typeof toolInput.blocks,
-      blocksIsArray: Array.isArray(toolInput.blocks),
-      blocksLength: Array.isArray(toolInput.blocks)
-        ? (toolInput.blocks as unknown[]).length
-        : undefined,
-      preview:
-        typeof toolInput.blocks === "string"
-          ? (toolInput.blocks as string).slice(0, 200)
-          : undefined,
-    };
-    return NextResponse.json(
-      {
+    // Defensive coercion: Anthropic occasionally returns array-typed tool
+    // fields as JSON-encoded strings (sometimes double-encoded). Build a new
+    // object — toolUse.input is frozen.
+    const rawInput = toolUse.input as Record<string, unknown>;
+    let blocks: unknown = rawInput.blocks;
+    for (let i = 0; i < 5 && typeof blocks === "string"; i++) {
+      try {
+        blocks = JSON.parse(blocks);
+      } catch {
+        break;
+      }
+    }
+    const toolInput = { ...rawInput, blocks };
+
+    const validation = parsedDocumentSchema.safeParse(toolInput);
+    if (!validation.success) {
+      return {
         ok: false,
-        error: `Parse output failed schema validation: ${validation.error.issues
+        reason: `validation failed: ${validation.error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)
           .join("; ")}`,
-        debug: shape,
+        shape: {
+          blocksType: typeof toolInput.blocks,
+          blocksIsArray: Array.isArray(toolInput.blocks),
+          blocksLength: Array.isArray(toolInput.blocks)
+            ? (toolInput.blocks as unknown[]).length
+            : undefined,
+          preview:
+            typeof toolInput.blocks === "string"
+              ? (toolInput.blocks as string).slice(0, 300)
+              : undefined,
+        },
+      };
+    }
+    return { ok: true, data: validation.data };
+  }
+
+  // Try up to 3 attempts. Anthropic occasionally returns the `blocks` array
+  // as a JSON-encoded string (sometimes with malformed inner quotes that
+  // break JSON.parse). A retry usually produces a clean array.
+  let lastFailure: AttemptResult | null = null;
+  let validation: { success: true; data: z.infer<typeof parsedDocumentSchema> } | null =
+    null;
+  const retryHints = [
+    undefined,
+    "IMPORTANT: Emit `blocks` as an actual JSON array — not as a JSON string. Each block must be a separate object element, not concatenated text.",
+    "CRITICAL: Your previous attempts emitted `blocks` as a string. The schema requires a TRUE JSON array. Output: blocks: [{...}, {...}, ...] not blocks: \"[...]\".",
+  ];
+  for (let attempt = 0; attempt < retryHints.length; attempt++) {
+    let result: AttemptResult;
+    try {
+      result = await attemptParse(retryHints[attempt]);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Anthropic call failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+        { status: 502 },
+      );
+    }
+    if (result.ok) {
+      validation = { success: true, data: result.data };
+      break;
+    }
+    lastFailure = result;
+  }
+
+  if (!validation) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `Parse output failed after ${retryHints.length} attempts: ${
+          lastFailure?.reason ?? "unknown error"
+        }`,
+        debug: lastFailure?.shape,
       },
       { status: 502 },
     );
