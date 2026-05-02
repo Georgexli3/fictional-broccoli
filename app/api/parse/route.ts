@@ -143,24 +143,42 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
   // Defensive coercion: Anthropic occasionally returns array-typed tool
   // fields as JSON-encoded strings rather than actual arrays despite strict
   // input_schema. Same failure mode build-kb.ts handles.
+  // Sometimes the string is double-encoded — unwrap until we get an array.
   const toolInput = toolUse.input as Record<string, unknown>;
-  if (typeof toolInput.blocks === "string") {
+  let blocks: unknown = toolInput.blocks;
+  for (let i = 0; i < 5 && typeof blocks === "string"; i++) {
     try {
-      const parsed = JSON.parse(toolInput.blocks);
-      if (Array.isArray(parsed)) toolInput.blocks = parsed;
+      blocks = JSON.parse(blocks);
     } catch {
-      // fall through; Zod will report the schema error below
+      break;
     }
+  }
+  if (Array.isArray(blocks)) {
+    toolInput.blocks = blocks;
   }
 
   const validation = parsedDocumentSchema.safeParse(toolInput);
   if (!validation.success) {
+    // Surface the shape we actually saw so we can debug without re-running
+    // the parse. Cheap insurance.
+    const shape = {
+      blocksType: typeof toolInput.blocks,
+      blocksIsArray: Array.isArray(toolInput.blocks),
+      blocksLength: Array.isArray(toolInput.blocks)
+        ? (toolInput.blocks as unknown[]).length
+        : undefined,
+      preview:
+        typeof toolInput.blocks === "string"
+          ? (toolInput.blocks as string).slice(0, 200)
+          : undefined,
+    };
     return NextResponse.json(
       {
         ok: false,
         error: `Parse output failed schema validation: ${validation.error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)
           .join("; ")}`,
+        debug: shape,
       },
       { status: 502 },
     );
