@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
+import { runProgrammaticScroll } from "@/lib/scroll-mutex";
 import { useSessionStore } from "@/lib/session-store";
 
 /**
@@ -11,6 +12,11 @@ import { useSessionStore } from "@/lib/session-store";
  *
  * The hook is mounted inside PdfPane and operates on its own scroll
  * container.
+ *
+ * V1.5: scroll command goes through `runProgrammaticScroll` so the shared
+ * scroll-mutex prevents this hook from fighting `usePaneScrollSync`. Without
+ * the mutex, hover-scroll → triggers IO in DocPane → triggers sync-scroll
+ * back → ping-pong.
  */
 export function usePdfHoverScroll(
   containerRef: React.RefObject<HTMLDivElement | null>,
@@ -39,7 +45,7 @@ export function usePdfHoverScroll(
           pageEl.offsetTop -
           container.offsetTop -
           24; /* small top breathing room */
-        container.scrollTo({ top: targetTop, behavior: "smooth" });
+        runProgrammaticScroll("hover", container, targetTop);
       }
     }, 120);
 

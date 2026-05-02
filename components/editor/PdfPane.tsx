@@ -5,11 +5,13 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { Loader2, Minus, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useSessionStore, usePdfViewMode } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 
 import { PdfPage } from "./PdfPage";
 import { useBboxResolution } from "./useBboxResolution";
 import { usePdfHoverScroll } from "./usePdfHoverScroll";
+import { ViewModeToggle } from "./ViewModeToggle";
 
 import "pdfjs-dist/web/pdf_viewer.css";
 import "./pdf-pane.css";
@@ -24,8 +26,15 @@ const MAX_SCALE = 3.0;
 const SCALE_STEP = 0.15;
 
 interface PdfPaneProps {
+  /** Original PDF URL — always used in Original mode. */
   url: string;
   className?: string;
+  /**
+   * V1.6: parent-owned ref pointed at the inner scroll container. EditorBoot
+   * uses this to drive bidirectional scroll-sync. Optional so existing call
+   * sites that don't need scroll-sync still work.
+   */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -35,29 +44,47 @@ interface PdfPaneProps {
  * render on demand as they enter the viewport (IntersectionObserver) so we
  * don't lock the main thread on a 24-page proposal at boot.
  *
- * Text layer is the PDF.js native one — transparent overlay with positioned
- * text spans, so browser-native text selection works on the rendered PDF.
- * Selection events are surfaced (M8 hover-link wires them to the right pane).
+ * V1.6: this is now a PASSIVE viewer — no click-to-block, no drag-select-to-
+ * scroll handlers. The previous attempt at "interactive PDF text" via the
+ * bbox resolver was too fragile (low-confidence regions misroute clicks).
+ * All editing happens in the DocPane; the PDF is purely a visual reference.
+ *
+ * The Original/Edited toggle swaps which PDF we load: original blob URL or
+ * the server-rendered preview (`buildEditedPreviewPdf` → cached on Vercel
+ * Blob). Switching modes triggers a full PDF reload — that's intentional, so
+ * the user sees the actual rendered highlights, not CSS overlays.
  */
-export function PdfPane({ url, className }: PdfPaneProps) {
+export function PdfPane({
+  url,
+  className,
+  scrollContainerRef: externalRef,
+}: PdfPaneProps) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState(1.2);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const internalRef = useRef<HTMLDivElement | null>(null);
+  // If parent passes a ref, use it; otherwise fall back to local ref.
+  const containerRef = externalRef ?? internalRef;
   usePdfHoverScroll(containerRef);
   useBboxResolution(doc);
 
+  const mode = usePdfViewMode();
+  const previewPdf = useSessionStore((s) => s.previewPdf);
+
+  // Effective URL: original mode always uses the original blob. Edited mode
+  // uses the regenerated preview if available, otherwise stays on the
+  // original (the regen hook will fill it in shortly; the toolbar shows a
+  // "Updating preview…" badge during the gap).
+  const effectiveUrl = mode === "edited" && previewPdf.url ? previewPdf.url : url;
+
   useEffect(() => {
-    if (!url) return;
+    if (!effectiveUrl) return;
     let cancelled = false;
     setError(null);
 
     const loadingTask = pdfjsLib.getDocument({
-      url,
-      // PDF.js can fetch CORS-restricted blobs through the proxy; for our
-      // Vercel Blob URLs CORS is permissive, but we pass the standard fetch
-      // signal anyway.
+      url: effectiveUrl,
       withCredentials: false,
     });
 
@@ -77,13 +104,15 @@ export function PdfPane({ url, className }: PdfPaneProps) {
       cancelled = true;
       void loadingTask.destroy();
     };
-  }, [url]);
+  }, [effectiveUrl]);
+
+  const editedRequestedButNotReady =
+    mode === "edited" && !previewPdf.url && previewPdf.isRegenerating;
 
   return (
     // `min-w-0` is critical: without it, the inner PDF page wrapper (~734px
     // wide at scale 1.2) expands the parent grid column past its 1fr
-    // allocation, which makes the PDF text-layer overlap the right pane and
-    // intercept clicks on the edit composer / Discard buttons.
+    // allocation, which makes the PDF overlap the right pane.
     <div className={cn("flex h-full min-w-0 flex-col", className)}>
       <Toolbar
         scale={scale}
@@ -99,6 +128,7 @@ export function PdfPane({ url, className }: PdfPaneProps) {
           });
         }}
         pageCount={pageCount}
+        regenerating={mode === "edited" && previewPdf.isRegenerating}
       />
 
       <div
@@ -111,18 +141,25 @@ export function PdfPane({ url, className }: PdfPaneProps) {
           </div>
         )}
 
-        {!doc && !error && (
+        {editedRequestedButNotReady && !error && (
+          <div className="text-muted-foreground flex items-center justify-center gap-2 py-12 text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Generating edited preview…
+          </div>
+        )}
+
+        {!doc && !error && !editedRequestedButNotReady && (
           <div className="text-muted-foreground flex items-center justify-center gap-2 py-12 text-sm">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading PDF…
           </div>
         )}
 
-        {doc && (
+        {doc && !editedRequestedButNotReady && (
           <div className="mx-auto flex max-w-full flex-col items-center gap-6">
             {Array.from({ length: pageCount }, (_, i) => (
               <PdfPage
-                key={i + 1}
+                key={`${effectiveUrl}-${i + 1}`}
                 doc={doc}
                 pageNum={i + 1}
                 scale={scale}
@@ -140,18 +177,28 @@ interface ToolbarProps {
   scale: number;
   onZoom: (direction: "in" | "out" | "reset") => void;
   pageCount: number;
+  regenerating: boolean;
 }
 
-function Toolbar({ scale, onZoom, pageCount }: ToolbarProps) {
+function Toolbar({ scale, onZoom, pageCount, regenerating }: ToolbarProps) {
   return (
-    <div className="border-border bg-background flex items-center justify-between border-b px-4 py-2 text-sm">
-      <div className="text-muted-foreground">
-        {pageCount > 0 ? (
-          <>
-            {pageCount} page{pageCount === 1 ? "" : "s"}
-          </>
-        ) : (
-          "—"
+    <div className="border-border bg-background flex items-center justify-between gap-3 border-b px-4 py-2 text-sm">
+      <div className="text-muted-foreground flex items-center gap-3">
+        <span>
+          {pageCount > 0 ? (
+            <>
+              {pageCount} page{pageCount === 1 ? "" : "s"}
+            </>
+          ) : (
+            "—"
+          )}
+        </span>
+        <ViewModeToggle />
+        {regenerating && (
+          <span className="flex items-center gap-1 text-xs">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            updating…
+          </span>
         )}
       </div>
       <div className="flex items-center gap-1">

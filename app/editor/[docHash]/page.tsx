@@ -1,8 +1,6 @@
 /**
- * Editor page — 2-pane editor shell.
- *
- * V1 placeholder. M3 mounts PdfPane on the left; M4 mounts DocPane on the
- * right; M5 wires the edit loop; M7 adds ChangesSidebar; M8 adds hover-link.
+ * Editor page — 2-pane editor shell (PDF | DocPane). Change history lives in
+ * a collapsible drawer overlaid on the DocPane.
  */
 
 import { notFound } from "next/navigation";

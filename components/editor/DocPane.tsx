@@ -1,18 +1,26 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { currentText } from "@/lib/doc-model";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 
 import { BlockView } from "./BlockView";
+import { ChangesDrawer } from "./ChangesDrawer";
+import { useActiveBlockTracking } from "./useActiveBlockTracking";
 
 interface DocPaneProps {
   blobUrl: string;
   hash: string;
   className?: string;
+  /**
+   * V1.6: parent-owned ref to the inner scroll container. EditorBoot uses this
+   * to drive `usePaneScrollSync`. Optional so the component can run standalone
+   * (e.g. in unit tests) with a local fallback ref.
+   */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 type ParseState =
@@ -26,11 +34,23 @@ type ParseState =
  *
  * Pulls parsed model from /api/parse on mount. Once loaded, the doc lives
  * in the session store; this component just renders blocks from the store.
+ *
+ * V1.6: hosts a collapsible `ChangesDrawer` overlay anchored to the right
+ * edge. Mounts `useActiveBlockTracking` against the scroll container so the
+ * drawer can auto-focus the relevant entry as the viewport moves.
  */
-export function DocPane({ blobUrl, hash, className }: DocPaneProps) {
+export function DocPane({
+  blobUrl,
+  hash,
+  className,
+  scrollContainerRef: externalRef,
+}: DocPaneProps) {
   const doc = useSessionStore((s) => s.doc);
   const setDoc = useSessionStore((s) => s.setDoc);
   const [state, setState] = useState<ParseState>({ status: "idle" });
+  const internalRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = externalRef ?? internalRef;
+  useActiveBlockTracking(scrollRef);
 
   // Fetch parse on mount, unless we already have a doc in the store
   // (resuming from localStorage).
@@ -110,7 +130,7 @@ export function DocPane({ blobUrl, hash, className }: DocPaneProps) {
   return (
     <div
       className={cn(
-        "flex h-full min-w-0 flex-col overflow-hidden text-sm",
+        "relative flex h-full min-w-0 flex-col overflow-hidden text-sm",
         className,
       )}
     >
@@ -127,7 +147,10 @@ export function DocPane({ blobUrl, hash, className }: DocPaneProps) {
           )}
         </div>
       </header>
-      <div className="flex-1 space-y-3 overflow-auto px-6 py-4">
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-3 overflow-auto px-6 py-4"
+      >
         {doc.blocks.map((block, i) => {
           const prev = doc.blocks[i - 1];
           const next = doc.blocks[i + 1];
@@ -142,6 +165,7 @@ export function DocPane({ blobUrl, hash, className }: DocPaneProps) {
           );
         })}
       </div>
+      <ChangesDrawer />
     </div>
   );
 }
