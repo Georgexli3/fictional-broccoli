@@ -110,7 +110,7 @@ export function DocPane({ blobUrl, hash, className }: DocPaneProps) {
   return (
     <div
       className={cn(
-        "flex h-full flex-col overflow-hidden text-sm",
+        "flex h-full min-w-0 flex-col overflow-hidden text-sm",
         className,
       )}
     >

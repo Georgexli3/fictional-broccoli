@@ -80,7 +80,11 @@ export function PdfPane({ url, className }: PdfPaneProps) {
   }, [url]);
 
   return (
-    <div className={cn("flex h-full flex-col", className)}>
+    // `min-w-0` is critical: without it, the inner PDF page wrapper (~734px
+    // wide at scale 1.2) expands the parent grid column past its 1fr
+    // allocation, which makes the PDF text-layer overlap the right pane and
+    // intercept clicks on the edit composer / Discard buttons.
+    <div className={cn("flex h-full min-w-0 flex-col", className)}>
       <Toolbar
         scale={scale}
         onZoom={(direction) => {
