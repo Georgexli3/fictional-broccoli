@@ -12,7 +12,7 @@ An AI editor for civil-engineering proposals. Upload a proposal PDF, click any b
 
 ```bash
 pnpm install
-cp .env.example .env.local      # then fill in ANTHROPIC_API_KEY (from the hiring contact)
+cp .env.example .env.local      # then fill in ANTHROPIC_API_KEY (provided separately)
 pnpm dev
 ```
 
@@ -35,8 +35,8 @@ Or deploy to Vercel — the storage env vars auto-inject. The KB build (`pnpm bu
 
 | Variable | Purpose | Source |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Hiring-proxy auth token (works for both Anthropic and OpenAI endpoints) | Provided separately by the hiring contact |
-| `ANTHROPIC_BASE_URL` | Proxy base URL | Defaults to the take-home hiring-proxy URL provided in the brief |
+| `ANTHROPIC_API_KEY` | Proxy auth token (works for both Anthropic and OpenAI endpoints) | Provided separately |
+| `ANTHROPIC_BASE_URL` | Proxy base URL | Defaults to the proxy URL provided in the brief |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob (PDF storage) | Auto-injected on Vercel |
 | `KV_REST_API_URL` | Vercel KV (parse cache) | Auto-injected on Vercel |
 | `KV_REST_API_TOKEN` | Vercel KV (parse cache) | Auto-injected on Vercel |
@@ -61,7 +61,7 @@ The brief lists fixtures `proposals/easy.pdf` (clean single-column 6–8 page) a
 - **De facto easy fixture:** `ExampleProposals/MECOProposals/1_Copy of City of Dixon SOQ.pdf` (13 MB / 8 pp, ~136 parsed blocks). The end-to-end demo runs against this.
 - **De facto hard fixture:** `ExampleProposals/AlphaCMProposals/Windsor ORH proposal.pdf` (24 pp, InDesign, TOC dot leaders, multi-section, appendices). Closer to the brief's hard-fixture archetype in *structural complexity* — file size is not the signal.
 
-If the hiring team provides the intended `kb/` and `proposals/` folders before submission, we'd swap the KB source.
+If you provide the intended `kb/` and `proposals/` folders before submission, we'd swap the KB source.
 
 ---
 
@@ -141,7 +141,7 @@ DOCX export is V1.7 work — explicitly included because the brief's stretch goa
 
 **Resume:** on home-page boot, the resume banner reads localStorage and offers to continue. One of the brief's "UX details that matter" — a 20-edit session shouldn't vanish on a refresh.
 
-**Designed with multi-user V2 in mind.** The hiring contact confirmed proposals are typically worked on by multiple roles (proposal writer, engineers, principals). V1 is single-user, but the doc-model's per-block revision stack design is forward-compatible with an op-log / CRDT model: each `Revision` carries a stable `editId` and timestamps, so the migration path to a server-authoritative state with presence + multi-user merging is clean. localStorage will swap for server-stored sessions, and the persistence boundary in `lib/persistence.ts` is the single swap point.
+**Designed with multi-user V2 in mind.** You confirmed proposals are typically worked on by multiple roles (proposal writer, engineers, principals). V1 is single-user, but the doc-model's per-block revision stack design is forward-compatible with an op-log / CRDT model: each `Revision` carries a stable `editId` and timestamps, so the migration path to a server-authoritative state with presence + multi-user merging is clean. localStorage will swap for server-stored sessions, and the persistence boundary in `lib/persistence.ts` is the single swap point.
 
 ---
 
@@ -181,7 +181,7 @@ This sits more honestly with the rest of the design. Proposal-team review workfl
 | **In-place PDF text replacement (V1.6)** | Documented above. Honest answer: Word with track-changes solves the same problem more reliably. |
 | **Spatial overlays on the PDF (V1.5)** | Documented above. Replaced by the always-visible ChangesPanel. |
 | **Hard-fixture multi-column / tables** | A real fix is parser-level (LlamaParse / structured extraction pre-pass), not an MVP feature. Documented as known limitation in §4. |
-| **Auth + multi-user / Postgres** | Single-user V1 demo. **The hiring contact confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
+| **Auth + multi-user / Postgres** | Single-user V1 demo. **You confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
 | **Vector retrieval / embeddings for KB** | At 5 KB items, similarity search is noise. Inlined + cached is correct at this scale. |
 | **Component tests / visual regression / Playwright in CI** | Manual UI testing is faster for this surface; CI stays lint+typecheck+Vitest. |
 | **Real analytics backend** | Event vocabulary is scaffolded (`lib/track.ts` + `/api/events`). Posthog wiring is a 30-min V1.5 task. |
@@ -232,7 +232,7 @@ This sits more honestly with the rest of the design. Proposal-team review workfl
 
 ### What I'd check before letting a paying customer use it
 
-**Per the hiring contact's clarification, all four rejection categories matter equally** — hallucination, wrong tone, lost information, and "sounded like AI" are equally serious failure modes for proposal editing. The eval suite is built to test all four, none deprioritized.
+**Per your clarification, all four rejection categories matter equally** — hallucination, wrong tone, lost information, and "sounded like AI" are equally serious failure modes for proposal editing. The eval suite is built to test all four, none deprioritized.
 
 Three offline evals, gating any rollout:
 
@@ -270,7 +270,7 @@ V1 ships the event vocabulary (`lib/track.ts`) and a no-op `/api/events` endpoin
 
 ### Layer 3 — Offline evals (run before any prompt change ships)
 
-Three suites, all described in §4 — and per the hiring contact they're equally load-bearing. V1 ships the **name-fidelity** suite as the one-suite proof-of-pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded). Edit-faithfulness and annotated-accuracy are the two next-up suites; both are scaffolded and would land before paying customers.
+Three suites, all described in §4 — and per your guidance they're equally load-bearing. V1 ships the **name-fidelity** suite as the one-suite proof-of-pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded). Edit-faithfulness and annotated-accuracy are the two next-up suites; both are scaffolded and would land before paying customers.
 
 ---
 
@@ -328,7 +328,7 @@ What this pass *didn't* find that I'd want a v2 to: visual regression tests (eve
 
 ## 7. What I'd build next given another 8 hours
 
-The hiring contact confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps to **#2** (DOCX shipped in V1.7, freeing the slot). The new top item is RFP-aware editing — the bottleneck I'd target next if I were trying to make the product 10× more useful in a single feature.
+You confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps to **#2** (DOCX shipped in V1.7, freeing the slot). The new top item is RFP-aware editing — the bottleneck I'd target next if I were trying to make the product 10× more useful in a single feature.
 
 In priority order:
 
@@ -348,16 +348,6 @@ In priority order:
 - V1.5 — Spatial overlays on PDF (cut after testing — see §3).
 
 Threaded comments + @-mentions on edits, role-based permissions (only principals can accept "Reference past work" edits), and PDF redlining for cross-firm partner reviews are the v2.5 backlog these unlock.
-
----
-
-## Open questions for the hiring contact
-
-All three are now answered:
-
-1. **What's typically wrong when customers reject AI suggestions?** *Hiring contact: "Everything you've brought up are things we've built into the product bc they're all real concerns and equally important."* All four (hallucination, wrong tone, lost info, "sounded like AI") matter equally. We've kept the system-prompt guardrails for all four (no new claims, voice grounding, no info loss, minimum-edit) and weighted the eval suite to cover all four — see §4 and §5 (Layer 3).
-2. **Is v2 single-user or multi-user collaborative?** *Hiring contact: "Multi-user as proposals are typically worked on by multiple people at all firms ie proposals writer, engineers, principles, etc."* V2 is multi-user. The §7 priority order now puts auth + Postgres + collab data layer at #1; we designed V1's per-block revision stack to migrate cleanly to an operation log (attributed, timestamped). The persistence boundary in `lib/persistence.ts` is the single swap point.
-3. **What's in the KB?** *Hiring contact: "A large part of a customer's KB is past proposals … we've included 5 proposals for MECO. You can pick one as the proposal you're working on and treat the others as past proposals in the knowledge base."* We use the 5 MECO PDFs at `ExampleProposals/MECOProposals/`, with the active doc excluded by SHA-256 hash at runtime so it's never fed to itself as past-work context.
 
 ---
 
