@@ -19,6 +19,7 @@ import {
   type EditHistoryItem,
   type EditIntent,
 } from "./doc-model";
+import type { KbMatch } from "./kb-match";
 import {
   flushSessionWrite,
   readSession,
@@ -59,6 +60,19 @@ interface SessionStore {
    * relevant entry. EPHEMERAL.
    */
   activeBlockId: string | null;
+  /**
+   * V1.7.2: proactive KB hints, keyed by block ID. Populated once after
+   * doc load by POSTing blocks to /api/kb-match. Empty if the KB hasn't
+   * been built or no blocks matched. EPHEMERAL.
+   */
+  kbHints: Record<string, KbMatch>;
+  /**
+   * V1.7.2: when set, the EditComposer for `blockId` auto-fires `intent` on
+   * mount. Used by the proactive 📎 KB chip — clicking it should kick off a
+   * "reference past work" edit immediately, not require the user to click
+   * the same intent inside the composer. Cleared after auto-fire. EPHEMERAL.
+   */
+  intentPrefill: { blockId: string; intent: EditIntent } | null;
   pendingEdit: PendingEdit | null;
 
   // Actions
@@ -79,6 +93,12 @@ interface SessionStore {
   setHoveredBlock: (blockId: string | null) => void;
   /** Viewport-reality block tracking. */
   setActiveBlockId: (blockId: string | null) => void;
+  /** V1.7.2: replace the KB hints map. */
+  setKbHints: (hints: Record<string, KbMatch>) => void;
+  /** V1.7.2: schedule an auto-fired edit on the given block. */
+  setIntentPrefill: (
+    prefill: { blockId: string; intent: EditIntent } | null,
+  ) => void;
   startPendingEdit: (input: {
     blockId: string;
     intent: EditIntent;
@@ -99,6 +119,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   selectionPrefill: null,
   hoveredBlockId: null,
   activeBlockId: null,
+  kbHints: {},
+  intentPrefill: null,
   pendingEdit: null,
 
   hydrate(hash) {
@@ -169,6 +191,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   setActiveBlockId(blockId) {
     set({ activeBlockId: blockId });
+  },
+
+  setKbHints(hints) {
+    set({ kbHints: hints });
+  },
+
+  setIntentPrefill(prefill) {
+    set({ intentPrefill: prefill });
   },
 
   startPendingEdit({ blockId, intent, userPrompt }) {

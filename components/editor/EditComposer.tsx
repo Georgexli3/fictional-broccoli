@@ -50,6 +50,9 @@ export function EditComposer({
   const acceptEdit = useSessionStore((s) => s.acceptPendingEdit);
   const selectBlock = useSessionStore((s) => s.selectBlock);
   const pendingEdit = useSessionStore((s) => s.pendingEdit);
+  const intentPrefill = useSessionStore((s) => s.intentPrefill);
+  const setIntentPrefill = useSessionStore((s) => s.setIntentPrefill);
+  const kbHint = useSessionStore((s) => s.kbHints[block.id]);
 
   const selectionPrefill = useSessionStore((s) => s.selectionPrefill);
   const initialPrompt = selectionPrefill
@@ -101,6 +104,19 @@ export function EditComposer({
     }
   };
 
+  // V1.7.2: auto-fire when the proactive KB chip set an intent prefill for
+  // this block. We consume + clear the prefill in the same tick so React
+  // strict-mode's double-mount doesn't fire the edit twice. `submit` is
+  // intentionally not in the deps — it's recreated each render but only
+  // reads stable store actions, so listing it would loop the effect.
+  useEffect(() => {
+    if (!intentPrefill) return;
+    if (intentPrefill.blockId !== block.id) return;
+    if (pendingEdit) return;
+    setIntentPrefill(null);
+    void submit(intentPrefill.intent);
+  }, [intentPrefill, block.id, pendingEdit, setIntentPrefill, submit]);
+
   const onTextareaKeyDown = (
     event: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
@@ -130,6 +146,17 @@ export function EditComposer({
 
   return (
     <div className="border-accent/40 bg-background mt-2 rounded-md border-2 px-3 py-3 shadow-sm">
+      {kbHint && (
+        <div className="text-muted-foreground mb-2 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] dark:bg-amber-950/20">
+          <Bookmark className="mt-px h-3 w-3 shrink-0 text-amber-700 dark:text-amber-400" />
+          <span className="leading-snug">
+            <span className="font-medium text-amber-900 dark:text-amber-200">
+              {kbHint.projectLabel}
+            </span>{" "}
+            — {kbHint.preview}
+          </span>
+        </div>
+      )}
       {!isPendingForThisBlock && (
         <>
           <div className="mb-2 flex flex-wrap gap-1.5">

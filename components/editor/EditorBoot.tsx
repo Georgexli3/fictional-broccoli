@@ -15,6 +15,7 @@ import { DocPane } from "./DocPane";
 import { EditorKeyboardShortcuts } from "./EditorKeyboardShortcuts";
 import { ExportPopover } from "./ExportPopover";
 import { PdfPane } from "./PdfPane";
+import { useKbHints } from "./useKbHints";
 import { usePaneScrollSync } from "./usePaneScrollSync";
 
 interface EditorBootProps {
@@ -43,6 +44,7 @@ export function EditorBoot({ docHash }: EditorBootProps) {
   const pdfScrollRef = useRef<HTMLDivElement | null>(null);
   const docScrollRef = useRef<HTMLDivElement | null>(null);
   usePaneScrollSync(pdfScrollRef, docScrollRef);
+  useKbHints();
 
   useEffect(() => {
     const ok = hydrate(docHash);
