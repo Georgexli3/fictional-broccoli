@@ -1,10 +1,11 @@
 # Buoyant Proposal Editor — Founding Engineer Take-Home
 
-A fidelity-first AI editor for civil-engineering proposals. Upload a proposal PDF, click any block, and ask AI to tighten it, match firm voice, fix names, or reference past work — every change shown as a track-changes diff before you accept it.
+An AI editor for civil-engineering proposals. Upload a proposal PDF, click any block, and ask AI to tighten it, match firm voice, fix names, or reference past work. Every change is shown as a track-changes diff before you accept it — and exports as a Word `.docx` with native track changes that opens in the Review pane for accept/reject.
 
-**Live demo:** <https://fictional-broccoli-mu.vercel.app>
+**Live demo:** <https://fictional-broccoli-mu.vercel.app> (V1)
+**V1.7 preview:** <https://fictional-broccoli-git-v16-passive-pdf-georges-projects-fe36494b.vercel.app>
 
-> **Build status:** the full implementation plan and locked decisions live at [`docs/PLAN.md`](./docs/PLAN.md) (mirrored from `~/.claude/plans/this-repository-will-jaunty-swan.md`). All milestones M1–M10 are structurally complete; some features (parse/edit Anthropic calls, full annotated-export bbox accuracy) require deployment with real environment variables to verify end-to-end.
+> **Build status:** V1 shipped as planned (M1–M10). After V1, the PDF view itself was iterated three times — V1.5 added spatial overlays on the PDF, V1.6 attempted in-place text replacement, V1.7 dropped both and made the PDF a passive reference with all output flowing through Markdown / DOCX / HTML preview. The pivot story is in §3 — it's the most informative thing in this README.
 
 ---
 
@@ -71,11 +72,17 @@ If Buoyant provides the intended `kb/` and `proposals/` folders before submissio
 
 The product feels like Track Changes for PDFs with an AI inside, not like ChatGPT-with-a-doc. Diffs by default, accept/reject every change, original PDF always visible. We trade away "creative chat with the doc" in favor of trust, transparency, and pixel-context fidelity — because the brief's own description of the loop (*"The user sees what changed and decides whether to apply it"*) is a trust pattern, not a creative pattern. Buoyant's customers review high-stakes proposals; trust > capability.
 
-### Architecture: hybrid two-pane
+### Architecture: doc-first, PDF as opt-in reference (V1.7)
 
-PDF.js text-layer rendered on the left (immutable, scrollable, zoomable, native-text-selectable). Structured doc-model rendered on the right (editable, click-to-edit, diff-by-default when an edit is pending). Hovering a block on the right scrolls the PDF on the left to that page (debounced).
+Default 2-pane layout: editable DocPane (center, with Edit ↔ Preview tabs) + always-visible ChangesPanel (right, 320 px). The original PDF is hidden by default; a "Show original" toggle in the header expands a third 1fr column on the left for the read-only PDF reference.
 
-**Trade-off:** The two views can drift if the parser misbehaves (e.g., merges paragraphs); we ship a `Reparse` escape hatch for those cases (V1.5 — current build relies on first-pass parse).
+Why doc-first instead of PDF-first: V1 through V1.6 led with the PDF and tried to make it the live edited surface (overlays, then in-place text replacement). Both fought the typography tar-pit — see §3 for the full pivot story. V1.7 stops fighting it. The PDF is reference-only; edits surface in the DocPane (block-by-block) and in Preview mode (full-doc HTML with inline track-changes).
+
+DocPane's Edit ↔ Preview tabs:
+- **Edit** — block list with click-to-edit, the V1 UX preserved.
+- **Preview** — full doc rendered as styled HTML with inline track-changes (red strikethrough + green underline) for edited blocks. Browser's native print-to-PDF on this view gives a clean output PDF for free.
+
+Bidirectional scroll-sync wires the PDF and DocPane together when both are visible (`block.page` only — no fuzzy bbox math, which is why V1.5's spatial sync was unreliable). Hovering a change in the ChangesPanel scrolls both panes to that block.
 
 ### PDF parsing: Claude Sonnet 4.6 native PDF support
 
@@ -112,15 +119,16 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 
 **Prompt caching:** the entire KB block is wrapped with `cache_control: ephemeral`. After the first edit in a session, subsequent edits read cached input at ~10% price. Sample 20-edit session post-cache cost: ~$0.10 in compute. Dominant cost is the one-time parse (~$0.20 per new PDF, $0 on KV-cache hit).
 
-### Export: 3 formats with quality gate
+### Export: 4 formats; DOCX with track changes is the headline
 
-- **Annotated Original** — overlay numbered colored markers on the original PDF + append a Changes Summary page enumerating every edit with before/after text. Preserves branding 100%; never modifies content streams. Marker placement uses a PDF.js text-layer fuzzy matcher (NFKC + soft-hyphen-strip + sliding match w/ confidence). Markers only draw at confidence ≥ 0.6; lower-confidence edits appear in the summary page only.
-- **Clean Rewrite PDF** — pdf-lib generates a fresh PDF from the edited doc model. Loses original branding; gains accuracy on edited text content. Useful when the user needs the *result* without the change history.
-- **Markdown** — for users who'll paste into Word/Notion/etc.
+- **Word (.docx) with track changes** *(recommended, V1.7)* — every accepted edit becomes a real Word `<w:ins>` / `<w:del>` revision via the `docx` package's `InsertedTextRun` / `DeletedTextRun`. When the file opens in Word it shows as proper redline markup with the Review pane offering accept/reject per change, attributed to "Buoyant Editor." This is the format proposal teams actually need — they review in Word.
+- **Markdown** — clean text for Word / Notion / Slack paste.
+- **Clean PDF** — pdf-lib regenerates a fresh PDF from the edited doc model. Loses original branding; gains accuracy on edited text content.
+- **Annotated Original** — overlay numbered colored markers on the original PDF + append a Changes Summary page enumerating every edit with before/after text. Preserves branding 100%; never modifies content streams. For review/redlining workflows.
 
-**Quality gate:** Markdown is the default export until we've measured ≥80% of edit markers landing within ±20pt on the Dixon SOQ. If the bbox accuracy gate passes, Annotated is promoted to primary.
+DOCX export is V1.7 work — explicitly included because the brief stretch goal asks for "export back to PDF" and Buoyant's actual product is Word-integrated. DOCX with native track changes is more useful than a clean PDF rewrite for the proposal-review use case (legal/sales accept-rejects in Word's Review pane, no extra tooling).
 
-**Why no in-place text replacement (preserving branding *and* updating text):** silent-failure modes. PDF content streams are glyph-runs at positions, not characters. Replacing text requires re-encoding glyphs in the same embedded font subset (which may not contain new characters), recomputing position offsets, handling line wrap. Commercial libraries (PDFTron, Aspose) solve this at $thousands/year licensing. pdf-lib explicitly does not. The annotated-overlay approach (DocuSign/HelloSign pattern) is honest and reliable.
+**Why no in-place text replacement on the original PDF** (preserving branding *and* updating text): silent-failure modes. PDF content streams are glyph-runs at positions, not characters. Replacing text requires re-encoding glyphs in the same embedded font subset (which may not contain new characters), recomputing position offsets, handling line wrap. Commercial libraries (PDFTron, Aspose) solve this at $thousands/year licensing. pdf-lib explicitly does not. **V1.6 attempted this anyway and proved the point** — see §3 for the post-mortem. The honest answers are: original PDF unchanged with markers (Annotated), fresh PDF (Clean), or Word with native track-changes (DOCX).
 
 ### State: 3-tier (Blob + KV + localStorage)
 
@@ -140,19 +148,47 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 
 ## 3. What I cut and why
 
+The interesting cuts are the ones I built first and then deliberately removed. After V1 shipped, I iterated three times on what the PDF view should *be*. Two iterations got built and then cut. Telling that story straight is the highest-signal thing in this README — and it's exactly the kind of "had an opinion, validated against reality, changed my mind" reasoning the brief asks for.
+
+### V1.5 → cut: spatial overlays on the PDF
+
+What I built: click PDF text → block selection on the right pane; drag-select text → highlights the block; amber rectangles drawn at edited regions; hover a region for a diff tooltip. Bidirectional scroll-sync between PDF and DocPane via IntersectionObserver bands. Stamped `data-block-id` on every PDF.js text-layer span via a fuzzy bbox resolver.
+
+What broke: the bbox resolver fuzzy-matches parsed text against the PDF text-layer. Confidence varies by block — at low confidence the highlight rectangles drift visibly off the edited paragraph; at high confidence the click-routing still misroutes when blocks span multiple text-layer items. The bottom line: a *"neat demo when it works, broken when it doesn't"* feel that erodes the trust thesis. Closed the V1.5 PR; preserved the branch as `v1.5-editor-ux` for reference.
+
+What I kept from V1.5: the scroll-mutex + bidirectional scroll-sync hooks (now block.page-only — no fuzzy bbox math), the `useActiveBlockTracking` IntersectionObserver, and the design pattern of separating ephemeral viewport state from persisted edit state. Those work well; the spatial overlays didn't.
+
+### V1.6 → cut: cover-and-replace text in the original PDF
+
+What I built: server-side pdf-lib generator that loads the original PDF and, for each edited block, draws a white rectangle over the original glyphs and writes the edited text in Helvetica at the same bbox. Soft yellow highlight indicator. Cached in Vercel Blob keyed by `(docHash, historyLen)`. New `/api/preview-pdf` endpoint, `usePreviewPdfRegen` hook with stale-while-revalidate, Original / Edited toggle in the PDF toolbar.
+
+What broke: two compounding problems.
+1. **Helvetica doesn't match original embedded fonts.** The replacement text visibly stands out as wrong typography — different x-height, different kerning, often different size since auto-fit shrinks to fit the bbox.
+2. **When the bbox is off, we cover the wrong text and replace it with the edit** — strictly worse than a misplaced highlight. The user-facing summary was *"the PDF looks the same except with a yellow box that's in the wrong place, and the new text is invisible."*
+
+The honest takeaway: PDF content streams are glyph-runs at positions, not characters. Replacing text requires re-encoding glyphs in the same embedded font subset, recomputing position offsets, handling line wrap, dealing with justified text and ligatures. Commercial PDF libraries (PDFTron, Aspose, PSPDFKit) solve this at $thousands/year licensing — and even they have edge cases. pdf-lib doesn't try. I shouldn't have either.
+
+### V1.7 → kept: doc-first, PDF as passive reference
+
+The fix: stop trying to make the PDF the live edited surface. PDF becomes a passive read-only reference, hidden behind a "Show original" toggle in the header (default off). All edited output flows through the DocPane and through exports — Markdown, Word `.docx` with native track changes, Clean PDF, Annotated original. The DocPane gets Edit ↔ Preview tabs; Preview is full-doc HTML with inline track-changes, and the browser's native print-to-PDF gives a clean output PDF for free.
+
+This sits more honestly with the rest of the design. Buoyant's actual product workflow is Word-integrated — proposal teams review and accept changes in Word's Review pane. Word is the universal format. A "perfect" PDF re-render was never the right goal for this customer.
+
+### Other things considered and cut
+
 | Cut | Why |
 |---|---|
-| **Multi-paragraph chat surface** | Dilutes the trust thesis. V2 once per-block reliability is proven. |
-| **DOCX export** | Buoyant's actual product is Word-integrated, so DOCX is V2-correct. But the brief's stretch goal lists *PDF*, and ~1 hr of DOCX layout API spent on a less-aligned format vs. shipping annotated-PDF properly. |
-| **In-place PDF text replacement** | Silent-failure modes (font subsetting, glyph encoding, position drift) violate fidelity-first. Annotated overlay gets 95% of value with zero silent failures. |
+| **Multi-paragraph chat surface** | Dilutes the trust thesis at V1; cleanest add once the per-block reliability is proven. Top of the §7 next-up list now that DOCX is shipped. |
+| **In-place PDF text replacement (V1.6)** | Documented above. Honest answer: Word with track-changes solves the same problem more reliably. |
+| **Spatial overlays on the PDF (V1.5)** | Documented above. Replaced by the always-visible ChangesPanel. |
 | **Hard-fixture multi-column / tables** | A real fix is parser-level (LlamaParse / structured extraction pre-pass), not an MVP feature. Documented as known limitation in §4. |
-| **Auth + multi-user / Postgres** | Single-user V1 demo. Auth is a 1-hr scope creep that demos nothing for the brief. KV covers our V1 needs. **Eric confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
+| **Auth + multi-user / Postgres** | Single-user V1 demo. **Eric confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
 | **Vector retrieval / embeddings for KB** | At 5 KB items, similarity search is noise. Inlined + cached is correct at this scale. |
 | **Component tests / visual regression / Playwright in CI** | Manual UI testing is faster for this surface; CI stays lint+typecheck+Vitest. |
 | **Real analytics backend** | Event vocabulary is scaffolded (`lib/track.ts` + `/api/events`). Posthog wiring is a 30-min V1.5 task. |
-| **Sentry / DDoS protection / rate limiting / custom domain / staging env** | V1.5 items; not load-bearing for the demo. |
+| **Sentry / rate limiting / custom domain / staging env** | V1.5 items; not load-bearing for the demo. |
 | **Span-level data model** | Block context produces better edits; the surgical-feel comes from span-prefill UI, not a span data model. |
-| **Adobe-quality re-rendering of the original** | $thousands/year commercial library territory. Out of scope. |
+| **Adobe-quality re-rendering of the original** | $thousands/year commercial library territory. Tried in V1.6, gave up. |
 
 ---
 
@@ -243,10 +279,13 @@ Three suites, all described in §4 — and per Eric they're equally load-bearing
 
 | Addition | Why |
 |---|---|
+| **Word `.docx` export with native track changes** *(V1.7, headline)* | Each accepted edit becomes a `<w:ins>` / `<w:del>` revision via the `docx` package. Opens in Word's Review pane with accept/reject for each change, attributed to "Buoyant Editor." This is what proposal teams actually use to review redlines — the brief's "export to PDF" stretch goal is the literal interpretation; Word with track-changes is the *useful* one. |
+| **Live HTML preview pane** *(V1.7)* | DocPane gets an Edit ↔ Preview tab. Preview renders the full doc as styled HTML with inline track-changes (red strikethrough + green underline). Print-to-PDF from this view gives a clean output PDF for free, no PDF-rebuilding logic needed. |
 | **Annotated Original PDF export** preserving branding via overlay | Brief's stretch asks for "re-render to PDF"; we went deeper because the dominant customer scenario (partner's PDF, recycled past proposal) can't assume source files exist. |
 | **PDF.js text-layer fuzzy matcher** for bbox resolution | Defensive use of original PDF as ground truth. LLM-emitted geometry is the wrong place to put trust. |
 | **Span-aware composer prefill** | Drag-select pre-fills `Replace 'X' with…` — surgical-edit feel without paying for span-level data model. |
-| **PDF ↔ right-pane hover-link** | Brief explicitly rewards "UX details that matter." Bridges the two-pane structure. |
+| **Hover scroll-sync between panes** | Brief explicitly rewards "UX details that matter." Bridges the two-pane structure when the PDF reference is open. |
+| **Always-visible ChangesPanel with viewport tracking** *(V1.7)* | Auto-focuses the change relevant to whatever block is in the middle band of your DocPane viewport. Click any change → both panes scroll. |
 | **Resume session banner** | Most products lose your work; this one doesn't. localStorage + KV-backed parse cache. |
 | **Synthesized `voice.md`** | Build-time distillation of past proposals into a compact voice spec. Cheaper at inference than feeding raw proposals as voice context. |
 | **`/api/health` smoke check + `pnpm verify:deploy`** | Catches the env-var-not-set-in-Vercel-dashboard failure that bites every Next.js deploy. |
@@ -272,16 +311,18 @@ Three suites, all described in §4 — and per Eric they're equally load-bearing
 
 ## 7. What I'd build next given another 8 hours
 
-Eric confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps from low-priority to **#1**.
+Eric confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps to **#2** (DOCX shipped in V1.7, freeing the slot). The new top item is RFP-aware editing — the bottleneck I'd target next if I were trying to make the product 10× more useful in a single feature.
 
 In priority order:
 
-1. **Auth (Clerk) + Postgres + multi-user collaboration** (~3–4 hr of the budget) — the unblocking move for everything else. Clerk for sign-in (5 min config, native Vercel Marketplace integration). Postgres for server-authoritative state. Migrate the doc-model's per-block revision stack to an **operation log** (timestamped, attributed) — the design is already forward-compatible. Add per-firm KB upload UI replacing the hardcoded MECO build. Add presence indicators (who's viewing/editing which block) and per-block locks so two users don't edit the same paragraph simultaneously. *This is the platform shift; everything else builds on top.*
-2. **DOCX export** (~1.5 hr) — Buoyant's actual product is Word-integrated. Customers re-styling in their own templates need DOCX more than PDF. Closes the format-preference gap.
-3. **Multi-paragraph chat surface** (~2 hr) — sidebar chat that emits multi-block patches; user reviews via accept-all/some/none gate. Enables "rewrite the whole Project Approach section" asks. Most useful with multi-user since one person can draft a section-level edit while others review.
-4. **Streamed `/api/parse` + JSONL block delivery** (~2 hr) — biggest robustness win. Today's non-streamed parse hits Vercel's 300s function ceiling on large multi-section InDesign-built PDFs (e.g. AlphaCM Windsor) and blocks while it's running. Streaming the response keeps the connection alive past the ceiling AND fixes Anthropic's occasional `blocks-as-stringified-JSON` quirk by emitting one block per stream event instead of one giant array via tool-use. Also enables a progressive "blocks appearing as they're parsed" UX in the right pane. **This is the single highest-leverage change for parser reliability.**
-5. **Hard-fixture support: multi-column reading order + table fidelity** (~1.5 hr) — pull in LlamaParse or a structured-extraction pre-pass for problem PDFs; fall back to current parser. Improves robustness on partner submissions and recycled docs.
-6. **Posthog wiring + Sentry + per-IP rate limiting on `/api/edit`** (~30 min) — turns the event-logging scaffolding into real production observability and protects spend.
+1. **RFP-aware editing** (~3 hr) — paste the RFP requirements into a sidebar; the app extracts required sections (Schedule, Approach, Team, Cost, …) → renders a checklist of which are present in the proposal vs. missing → auto-suggests boilerplate from the KB to fill gaps. Compliance is the actual proposal-team bottleneck (missing one required section can disqualify a bid). Demos in 30 seconds and instantly explains why someone would pay for this. *The biggest 10× lever on top of the V1.7 base.*
+2. **Auth (Clerk) + Postgres + multi-user collaboration** (~3 hr) — the unblocking move for the rest of the v2 backlog. Clerk for sign-in (5 min config, native Vercel Marketplace integration). Postgres for server-authoritative state. Migrate the doc-model's per-block revision stack to an operation log — the design is already forward-compatible. Add per-firm KB upload UI replacing the hardcoded MECO build. Per-block locks for concurrent edits.
+3. **Proactive KB suggestions** (~2 hr) — right now `reference_past_work` is reactive (only fires on click). Turn it ambient: on each block render, pre-check the KB for genuinely-relevant past projects, show a subtle `📎 reference past work?` hint with a one-line preview when one matches. Most underused thing we built; making it ambient is the highest-ROI UX upgrade for the smallest code.
+4. **Multi-paragraph chat surface** (~2 hr) — sidebar chat that emits multi-block patches; reviewed via accept-all/some/none gate. Enables *"rewrite the whole Project Approach section in our voice"* asks. Compounds well with DOCX track-changes — multi-block edits export as a coherent set of revisions.
+5. **Streamed `/api/parse` + JSONL block delivery** (~2 hr) — biggest robustness win. Today's non-streamed parse hits Vercel's 300s function ceiling on large multi-section InDesign-built PDFs (e.g. AlphaCM Windsor). Streaming the response keeps the connection alive past the ceiling AND sidesteps Anthropic's occasional `blocks-as-stringified-JSON` quirk by emitting one block per stream event. Also enables a progressive "blocks appearing as they're parsed" UX.
+6. **Encrypted / image-only PDF detection** *(implemented in V1.7.1)* — explicit text-layer probe in `/api/parse` returns a helpful error before burning a Claude call. Currently in production at the V1.7 preview URL.
+7. **Hard-fixture support: multi-column reading order + table fidelity** (~1.5 hr) — LlamaParse or structured-extraction pre-pass for problem PDFs; fall back to current parser.
+8. **Posthog wiring + Sentry + per-IP rate limiting on `/api/edit`** (~30 min) — turns the event-logging scaffolding into real production observability and protects spend.
 
 Threaded comments + @-mentions on edits, role-based permissions (only principals can accept "Reference past work" edits), and PDF redlining for cross-firm partner reviews are the v2.5 backlog these unlock.
 

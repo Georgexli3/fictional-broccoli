@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { anthropic, DEFAULT_MODEL } from "@/lib/anthropic";
+import { classifyAnthropicErrorAsNextResponse } from "@/lib/anthropic-errors";
 import { buildPdfDocumentSource } from "@/lib/anthropic-pdf";
 import { isEditableKind, type DocumentModel } from "@/lib/doc-model";
 import { parsedDocumentSchema } from "@/lib/doc-model-zod";
@@ -12,6 +13,7 @@ import {
   PARSE_SYSTEM_PROMPT,
   PARSE_USER_PROMPT,
 } from "@/lib/parse-prompt";
+import { probePdf } from "@/lib/pdf-probe";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -76,7 +78,19 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
     }
   }
 
-  // 2. Send to Claude.
+  // 2. Pre-flight probe — catches encrypted/password-protected and
+  // image-only PDFs before we burn an Anthropic call. ~200–500 ms on the
+  // happy path; saves ~60–120 s + ~$0.20 on bad PDFs and gives the user
+  // an actionable error message instead of a generic Anthropic failure.
+  const probe = await probePdf(body.blobUrl);
+  if (!probe.ok) {
+    return NextResponse.json(
+      { ok: false, error: probe.reason },
+      { status: 400 },
+    );
+  }
+
+  // 3. Send to Claude.
   let pdfSource: Awaited<ReturnType<typeof buildPdfDocumentSource>>;
   try {
     pdfSource = await buildPdfDocumentSource({
@@ -191,15 +205,7 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
     try {
       result = await attemptParse(retryHints[attempt]);
     } catch (error) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `Anthropic call failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-        { status: 502 },
-      );
+      return classifyAnthropicErrorAsNextResponse<ParseFailure>(error);
     }
     if (result.ok) {
       validation = { success: true, data: result.data };
