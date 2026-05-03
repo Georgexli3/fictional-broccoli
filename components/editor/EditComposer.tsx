@@ -62,6 +62,7 @@ export function EditComposer({
     : "";
   const [prompt, setPrompt] = useState(initialPrompt);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!textareaRef.current) return;
@@ -72,10 +73,23 @@ export function EditComposer({
     el.setSelectionRange(el.value.length, el.value.length);
   }, [block.id]);
 
+  // Cancel any in-flight stream when the composer unmounts (block change,
+  // editor exit, etc.). Without this, navigating to another block silently
+  // leaves the stream running on the server while the client throws away
+  // the result — wasted compute and a stale "Generating…" spinner.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   const beforeText = currentText(block);
 
   const submit = async (intent: EditIntent, userPrompt?: string) => {
     if (intent === "freeform" && !userPrompt?.trim()) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     startEdit({ blockId: block.id, intent, userPrompt });
     const startedAt = Date.now();
     try {
@@ -92,6 +106,7 @@ export function EditComposer({
         {
           onChunk: (partial) => setResult(partial),
         },
+        controller.signal,
       );
       setResult(finalText);
       track({
@@ -103,6 +118,10 @@ export function EditComposer({
         outputLength: finalText.length,
       });
     } catch (error) {
+      // AbortError is the user navigating away; not an error worth showing.
+      const isAbort =
+        error instanceof DOMException && error.name === "AbortError";
+      if (isAbort) return;
       setError(error instanceof Error ? error.message : String(error));
     }
   };
