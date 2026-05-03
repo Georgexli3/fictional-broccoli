@@ -33,7 +33,7 @@ const INTENT_INSTRUCTIONS: Record<EditIntent, string> = {
 
   reference_past_work: `INTENT: Add ONE brief reference to a relevant past project from <past_proposals>/<snippets> if and only if a clearly relevant project exists. Splice it in as a single sentence appended to the block, in the firm's voice. If no past proposal in the KB is genuinely relevant to this block's topic, return the block UNCHANGED with no insertion. Do NOT invent past projects.`,
 
-  freeform: `INTENT: Apply the user's freeform instruction (provided in the user message under <instruction>) under the hard rules above. If the instruction would violate any hard rule, do not satisfy it.`,
+  freeform: `INTENT: Apply the user's freeform instruction (provided in the user message under <instruction>) under the hard rules above. If the user explicitly supplies replacement text in their instruction (e.g. "Replace 'X' with 'Y'", "Change the client name to Z", "Use 'Foo' instead of 'Bar'"), the user-supplied text is authorized — treat it as a corrected fact, NOT as a new claim. Apply it verbatim. The "no new claims" rule is meant to stop the model from inventing facts on its own; it does not apply to substitutions the user has explicitly written. If the instruction would violate any other hard rule (info loss, fabricated specifics not in the instruction), do not satisfy it.`,
 };
 
 export function getIntentInstructions(intent: EditIntent): string {
