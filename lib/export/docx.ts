@@ -78,16 +78,23 @@ export async function exportDocx(
     const original = hasEdit ? block.revisions[0]?.text ?? "" : text;
     const editDate = lastEditByBlock.get(block.id) ?? new Date();
 
+    // Per-kind run styling — applied at construction so it survives the
+    // track-change InsertedTextRun / DeletedTextRun split. Applying it
+    // post-hoc in `buildParagraph` would require reading text back out of
+    // the runs, which docx@9 doesn't expose reliably.
+    const style = runStyleForKind(block.kind);
+
     let children: Array<TextRun | InsertedTextRun | DeletedTextRun>;
     if (hasEdit) {
       const ops = computeDiff(original, text);
       children = ops.map((op) => {
         if (op.kind === "equal") {
-          return new TextRun({ text: op.text });
+          return new TextRun({ text: op.text, ...style });
         }
         if (op.kind === "insert") {
           return new InsertedTextRun({
             text: op.text,
+            ...style,
             id: revisionId++,
             author: AUTHOR,
             date: editDate.toISOString(),
@@ -95,13 +102,14 @@ export async function exportDocx(
         }
         return new DeletedTextRun({
           text: op.text,
+          ...style,
           id: revisionId++,
           author: AUTHOR,
           date: editDate.toISOString(),
         });
       });
     } else {
-      children = [new TextRun({ text })];
+      children = [new TextRun({ text, ...style })];
     }
 
     paragraphs.push(buildParagraph(block, children));
@@ -142,24 +150,15 @@ function buildParagraph(
         children,
       });
     case "caption":
+      // Italic styling already baked into the runs at construction time
+      // (see runStyleForKind), so we can pass them through unchanged.
       return new Paragraph({
         spacing: { after: 120 },
-        children: [
-          ...children.map((c) =>
-            c instanceof TextRun
-              ? new TextRun({
-                  text: getText(c),
-                  italics: true,
-                  size: 20,
-                  color: "666666",
-                })
-              : c,
-          ),
-        ],
+        children,
       });
     case "table":
-      // Plain paragraph fallback — V1 didn't preserve table structure
-      // from the parser, so we emit body-text rows with light styling.
+      // Plain paragraph fallback — the parser doesn't preserve table
+      // structure, so we emit body-text rows.
       return new Paragraph({
         spacing: { after: 120 },
         children,
@@ -173,17 +172,18 @@ function buildParagraph(
 }
 
 /**
- * Pulls the text out of a TextRun for restyling. The docx package doesn't
- * expose a getter for `text`, but the run options are accessible via the
- * private `text` field on the constructor input — we re-create the run
- * with the new options in `buildParagraph` for `caption`.
+ * Per-block-kind run styling. Returned options are spread into every
+ * `TextRun` / `InsertedTextRun` / `DeletedTextRun` for the block, so the
+ * style survives the diff-driven split into multiple runs (track-changes
+ * inserts/deletes need the same italic/size/color as the equal segments).
  */
-function getText(run: TextRun): string {
-  // The docx TextRun stores its options on `.options` in v9.x; fall back to
-  // an empty string if the shape changes (caption styling will degrade
-  // gracefully rather than throw).
-  const opts = (run as unknown as { options?: { text?: string } }).options;
-  return opts?.text ?? "";
+function runStyleForKind(
+  kind: Block["kind"],
+): { italics?: boolean; size?: number; color?: string } {
+  if (kind === "caption") {
+    return { italics: true, size: 20, color: "666666" };
+  }
+  return {};
 }
 
 function mapLastEditTime(doc: DocumentModel): Map<string, Date> {

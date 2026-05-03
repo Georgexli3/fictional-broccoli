@@ -143,7 +143,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   setDoc(doc) {
-    set({ doc });
+    // Reset proactive-KB hints + any pending intent prefill since the
+    // block-id space just changed wholesale. `useKbHints` will repopulate.
+    set({ doc, kbHints: {}, intentPrefill: null });
     persist(get());
   },
 
@@ -174,14 +176,23 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   selectBlock(blockId, prefill = null) {
-    // Set activeBlockId in the same update so the drawer's auto-focus doesn't
-    // briefly land on a transient viewport block during the smooth-scroll
-    // that follows a click.
+    // Set activeBlockId in the same update so the ChangesPanel's auto-focus
+    // doesn't briefly land on a transient viewport block during the smooth-
+    // scroll that follows a click.
+    //
+    // Drop any stale `intentPrefill` whose target isn't the new selection —
+    // otherwise a 📎 click → user-clicks-elsewhere flow leaves a prefill
+    // that would surprise-fire the next time the same block is selected
+    // through any path.
+    const current = get().intentPrefill;
+    const intentPrefill =
+      current && current.blockId === blockId ? current : null;
     set({
       selectedBlockId: blockId,
       selectionPrefill: blockId ? prefill : null,
       pendingEdit: null,
       activeBlockId: blockId ?? get().activeBlockId,
+      intentPrefill,
     });
   },
 

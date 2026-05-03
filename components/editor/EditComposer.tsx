@@ -106,9 +106,10 @@ export function EditComposer({
 
   // V1.7.2: auto-fire when the proactive KB chip set an intent prefill for
   // this block. We consume + clear the prefill in the same tick so React
-  // strict-mode's double-mount doesn't fire the edit twice. `submit` is
-  // intentionally not in the deps — it's recreated each render but only
-  // reads stable store actions, so listing it would loop the effect.
+  // strict-mode's double-mount doesn't fire twice — the second mount sees
+  // `intentPrefill === null` and bails. `submit` IS in the deps (linter
+  // requires it; it's recreated each render), but every re-run after the
+  // first hits the early-return, so it's a noop loop, not an infinite one.
   useEffect(() => {
     if (!intentPrefill) return;
     if (intentPrefill.blockId !== block.id) return;

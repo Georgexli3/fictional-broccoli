@@ -95,21 +95,42 @@ function readKbFromDisk(): KbContext {
     })
     .filter((a): a is KbProposalAbstract => a !== null);
 
-  const entities: KbProposalEntities[] = listJsonish(entitiesDir, ".json").map(
-    (file) => {
+  const entities: KbProposalEntities[] = listJsonish(entitiesDir, ".json")
+    .map((file): KbProposalEntities | null => {
       const hash = file.replace(/\.json$/, "");
-      const text = readFileSync(join(entitiesDir, file), "utf8");
-      const parsed = JSON.parse(text) as Omit<KbProposalEntities, "hash">;
-      return { hash, ...parsed };
-    },
-  );
+      try {
+        const text = readFileSync(join(entitiesDir, file), "utf8");
+        const parsed = JSON.parse(text) as Omit<KbProposalEntities, "hash">;
+        return { hash, ...parsed };
+      } catch (error) {
+        // One bad file shouldn't kill the whole KB. Surface to logs so a
+        // build-time corruption is visible to the operator without taking
+        // the rest of the proactive-KB feature down.
+        console.warn(
+          `[kb] failed to parse entities/${file}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return null;
+      }
+    })
+    .filter((e): e is KbProposalEntities => e !== null);
 
   const snippets: KbProposalSnippet[] = listJsonish(snippetsDir, ".json")
-    .flatMap((file) => {
+    .flatMap((file): KbProposalSnippet[] => {
       const hash = file.replace(/\.json$/, "");
-      const text = readFileSync(join(snippetsDir, file), "utf8");
-      const parsed = JSON.parse(text) as Omit<KbProposalSnippet, "hash">[];
-      return parsed.map((s) => ({ ...s, hash }));
+      try {
+        const text = readFileSync(join(snippetsDir, file), "utf8");
+        const parsed = JSON.parse(text) as Omit<KbProposalSnippet, "hash">[];
+        return parsed.map((s) => ({ ...s, hash }));
+      } catch (error) {
+        console.warn(
+          `[kb] failed to parse snippets/${file}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return [];
+      }
     });
 
   return {
