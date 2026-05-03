@@ -59,7 +59,7 @@ Or deploy to Vercel — the storage env vars auto-inject. The KB build (`pnpm bu
 
 The brief lists fixtures `proposals/easy.pdf` (clean single-column 6–8 page) and `proposals/hard.pdf` (multi-column, table, headers/footers, embedded image) — but those files were not provided to us. We substitute from the user-provided proposals:
 
-- **De facto easy fixture:** `ExampleProposals/MECOProposals/1_Copy of City of Dixon SOQ.pdf` (smallest MECO at 13 MB / 24 pp). The end-to-end demo runs against this.
+- **De facto easy fixture:** `ExampleProposals/MECOProposals/1_Copy of City of Dixon SOQ.pdf` (13 MB / 8 pp, ~136 parsed blocks). The end-to-end demo runs against this.
 - **De facto hard fixture:** `ExampleProposals/AlphaCMProposals/Windsor ORH proposal.pdf` (24 pp, InDesign, TOC dot leaders, multi-section, appendices). Closer to the brief's hard-fixture archetype in *structural complexity* — file size is not the signal.
 
 If the hiring team provides the intended `kb/` and `proposals/` folders before submission, we'd swap the KB source.
