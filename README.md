@@ -2,8 +2,7 @@
 
 An AI editor for civil-engineering proposals. Upload a proposal PDF, click any block, and ask AI to tighten it, match firm voice, fix names, or reference past work. Every change is shown as a track-changes diff before you accept it — and exports as a Word `.docx` with native track changes that opens in the Review pane for accept/reject.
 
-**Live demo:** <https://fictional-broccoli-mu.vercel.app> (V1)
-**V1.7 preview:** <https://fictional-broccoli-git-v16-passive-pdf-georges-projects-fe36494b.vercel.app>
+**Live demo:** <https://fictional-broccoli-mu.vercel.app> — runs the current `main` branch (V1.7.3 + post-V1.7.3 stress-test fixes; see §6).
 
 > **Build status:** V1 shipped as planned (M1–M10). After V1, the PDF view itself was iterated three times — V1.5 added spatial overlays on the PDF, V1.6 attempted in-place text replacement, V1.7 dropped both and made the PDF a passive reference with all output flowing through Markdown / DOCX / HTML preview. The pivot story is in §3 — it's the most informative thing in this README.
 
