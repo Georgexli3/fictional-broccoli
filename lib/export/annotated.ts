@@ -20,6 +20,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import type { Block, DocumentModel, EditHistoryItem } from "../doc-model";
 import { pdfJsBboxToPdfLibRect } from "../pdf-coords";
+import { winAnsiSafe } from "./winansi-safe";
 
 const MARKER_RADIUS = 12;
 const MARKER_COLOR = rgb(0.92, 0.45, 0.18); // warm orange, contrasts on white + most brand palettes
@@ -126,7 +127,7 @@ export async function exportAnnotatedPdf(
   };
 
   const drawHeader = () => {
-    summaryPage.drawText(`${title} — Changes Summary`, {
+    summaryPage.drawText(winAnsiSafe(`${title} — Changes Summary`), {
       x: SUMMARY_MARGIN_X,
       y: cursorY - 18,
       size: 18,
@@ -151,8 +152,11 @@ export async function exportAnnotatedPdf(
 
   for (const item of renderable) {
     const headerHeight = 30;
-    const beforeText = item.entry.beforeText;
-    const afterText = item.entry.afterText;
+    // Sanitize before measuring or drawing — `widthOfTextAtSize` itself
+    // crashes on un-encodable characters, so wrap() must see WinAnsi-safe
+    // text.
+    const beforeText = winAnsiSafe(item.entry.beforeText);
+    const afterText = winAnsiSafe(item.entry.afterText);
     const beforeLines = wrap(beforeText, helveticaBody, 10, SUMMARY_PAGE_WIDTH - 2 * SUMMARY_MARGIN_X);
     const afterLines = wrap(afterText, helveticaBody, 10, SUMMARY_PAGE_WIDTH - 2 * SUMMARY_MARGIN_X);
     const totalHeight =
@@ -174,7 +178,7 @@ export async function exportAnnotatedPdf(
       color: rgb(1, 1, 1),
     });
     summaryPage.drawText(
-      `Page ${item.block.page} · ${prettifyIntent(item.entry.intent)}`,
+      winAnsiSafe(`Page ${item.block.page} · ${prettifyIntent(item.entry.intent)}`),
       {
         x: SUMMARY_MARGIN_X + 28,
         y: cursorY - 12,
@@ -183,7 +187,7 @@ export async function exportAnnotatedPdf(
       },
     );
     if (item.entry.userPrompt) {
-      summaryPage.drawText(`"${truncate(item.entry.userPrompt, 60)}"`, {
+      summaryPage.drawText(winAnsiSafe(`"${truncate(item.entry.userPrompt, 60)}"`), {
         x: SUMMARY_MARGIN_X + 28,
         y: cursorY - 24,
         size: 9,

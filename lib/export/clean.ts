@@ -15,6 +15,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import { currentText, type DocumentModel } from "../doc-model";
+import { winAnsiSafe } from "./winansi-safe";
 
 const PAGE_WIDTH = 612; // US Letter
 const PAGE_HEIGHT = 792;
@@ -148,7 +149,7 @@ function drawText(
   opts: DrawOpts = {},
 ) {
   ensureSpace(ctx, size + 4);
-  ctx.page.drawText(text, {
+  ctx.page.drawText(winAnsiSafe(text), {
     x: MARGIN_X + (opts.indent ?? 0),
     y: ctx.y - size,
     size,
@@ -168,8 +169,12 @@ function drawWrapped(
   const lineHeight = opts.lineHeight ?? size * 1.4;
   const maxWidth = CONTENT_WIDTH - indent;
 
+  // Sanitize at the wrap boundary — `font.widthOfTextAtSize` itself calls
+  // into the WinAnsi encoder and throws on un-encodable characters, so we
+  // can't wait until drawText.
+  const safeText = winAnsiSafe(text);
   // Manual word-wrap. pdf-lib doesn't ship layout.
-  const paragraphs = text.split(/\n+/);
+  const paragraphs = safeText.split(/\n+/);
   for (const para of paragraphs) {
     const words = para.split(/\s+/).filter(Boolean);
     let line = "";
