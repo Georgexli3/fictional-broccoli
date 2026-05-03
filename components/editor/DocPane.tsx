@@ -77,17 +77,31 @@ export function DocPane({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ blobUrl, hash }),
         });
-        const json = await response.json();
+        // Defensive: server can return non-JSON on infra-level failures
+        // (Vercel HTML 502 page, gateway timeouts, etc.). Don't let
+        // `response.json()` blow up with "Unexpected token 'A'…" — fall
+        // back to HTTP status text + the body preview.
+        const text = await response.text();
+        let json: { ok?: boolean; doc?: unknown; cached?: boolean; error?: string } | null = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch {
+          json = null;
+        }
         if (cancelled) return;
-        if (!response.ok || !json.ok) {
-          setState({
-            status: "error",
-            error: json.error ?? `HTTP ${response.status}`,
-          });
+        if (!response.ok || !json || !json.ok) {
+          const friendly =
+            json?.error ??
+            (response.status === 504
+              ? "Parse timed out. This PDF may be too complex for the current 300s limit — try a smaller file."
+              : response.status >= 500
+                ? `Server returned HTTP ${response.status}. The parse may have hit an infrastructure limit (timeout, memory). Try again or use a smaller PDF.`
+                : `HTTP ${response.status}`);
+          setState({ status: "error", error: friendly });
           return;
         }
-        setDoc(json.doc);
-        setState({ status: "ready", fromCache: json.cached });
+        setDoc(json.doc as never);
+        setState({ status: "ready", fromCache: Boolean(json.cached) });
       } catch (error) {
         if (cancelled) return;
         setState({
