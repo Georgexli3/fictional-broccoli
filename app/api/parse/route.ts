@@ -17,10 +17,11 @@ import { probePdf } from "@/lib/pdf-probe";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-// Bumped for Pro/Enterprise; on Hobby this is silently capped at 300s, but
-// the streamed response below extends the wall time as long as keepalive
-// bytes flow — sidestepping the per-request ceiling.
-export const maxDuration = 800;
+// 300 is the Hobby ceiling. Setting higher fails deploy validation.
+// The streamed-response architecture extends practical wall time past
+// the function's hard cutoff anyway, because Vercel keeps streaming
+// functions alive while bytes flow. Keepalive comments emit every 10s.
+export const maxDuration = 300;
 
 const requestBodySchema = z.object({
   blobUrl: z.string().url(),
