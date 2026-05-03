@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "AI Proposal Editor",
   description:
     "Fidelity-first AI editor for civil-engineering proposals. Track Changes for PDFs.",
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({
