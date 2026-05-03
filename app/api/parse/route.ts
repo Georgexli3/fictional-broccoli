@@ -17,7 +17,10 @@ import { probePdf } from "@/lib/pdf-probe";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// Bumped for Pro/Enterprise; on Hobby this is silently capped at 300s, but
+// the streamed response below extends the wall time as long as keepalive
+// bytes flow — sidestepping the per-request ceiling.
+export const maxDuration = 800;
 
 const requestBodySchema = z.object({
   blobUrl: z.string().url(),
@@ -52,7 +55,7 @@ type ParseResponse = ParseSuccess | ParseFailure;
  * V1 is non-streamed — the route waits for the full tool call before
  * responding. M8 upgrades this to streamed partial-block delivery via SSE.
  */
-export async function POST(request: Request): Promise<NextResponse<ParseResponse>> {
+export async function POST(request: Request): Promise<Response> {
   let body: z.infer<typeof requestBodySchema>;
   try {
     const json = await request.json();
@@ -119,9 +122,20 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
     const userText = extraInstruction
       ? `${PARSE_USER_PROMPT}\n\n${extraInstruction}`
       : PARSE_USER_PROMPT;
-    const response = await anthropic.messages.create({
+    // Streaming sidesteps the proxy's per-request response-time cap.
+    // `messages.create()` was timing out at exactly 300s on every fixture
+    // larger than Dixon — that's the proxy's max-response-time, not a
+    // function ceiling. Streaming SSE events flow continuously, so the
+    // proxy sees data and doesn't terminate. We still wait for the final
+    // message server-side and return JSON to the client unchanged.
+    const stream = anthropic.messages.stream({
       model: DEFAULT_MODEL,
-      max_tokens: 16384,
+      // 64K covers 30+ page MECOs with full block emission. The original
+      // 16K was hit by Hunnewell (22 MB / ~30 pp) — the model emitted a
+      // partial tool_use with no `blocks` field because it exhausted
+      // budget mid-emission. 64K is the practical ceiling for Sonnet 4.6
+      // and gives generous headroom for the longest fixtures.
+      max_tokens: 65536,
       system: PARSE_SYSTEM_PROMPT,
       tools: [emitDocumentStructureTool],
       tool_choice: { type: "tool", name: "emit_document_structure" },
@@ -135,16 +149,17 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
         },
       ],
     });
+    const response = await stream.finalMessage();
 
     const toolUse = response.content.find(
-      (block) =>
+      (block: { type: string; name?: string }) =>
         block.type === "tool_use" && block.name === "emit_document_structure",
     );
     if (!toolUse || toolUse.type !== "tool_use") {
       return {
         ok: false,
-        reason: "Model did not emit emit_document_structure",
-        shape: {},
+        reason: `Model did not emit emit_document_structure (stop_reason: ${response.stop_reason}; content types: ${response.content.map((c: { type: string }) => c.type).join(",")})`,
+        shape: { stopReason: response.stop_reason },
       };
     }
 
@@ -164,12 +179,17 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
 
     const validation = parsedDocumentSchema.safeParse(toolInput);
     if (!validation.success) {
+      const isMaxTokens = response.stop_reason === "max_tokens";
       return {
         ok: false,
-        reason: `validation failed: ${validation.error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; ")}`,
+        reason: isMaxTokens
+          ? `Token budget exhausted (stop_reason=max_tokens). The PDF needs more output tokens than the current 65536 budget allows.`
+          : `validation failed: ${validation.error.issues
+              .map((i) => `${i.path.join(".")}: ${i.message}`)
+              .join("; ")}`,
         shape: {
+          stopReason: response.stop_reason,
+          rawInputKeys: Object.keys(rawInput),
           blocksType: typeof toolInput.blocks,
           blocksIsArray: Array.isArray(toolInput.blocks),
           blocksLength: Array.isArray(toolInput.blocks)
@@ -185,72 +205,108 @@ export async function POST(request: Request): Promise<NextResponse<ParseResponse
     return { ok: true, data: validation.data };
   }
 
-  // Try up to 2 attempts. Anthropic occasionally returns the `blocks` array
-  // as a JSON-encoded string (sometimes with malformed inner quotes that
-  // break JSON.parse); a retry usually produces a clean array. We cap at 2
-  // (down from 3) because each attempt on a complex PDF can take 60-120s,
-  // and 3 attempts on a multi-section doc can exceed Vercel's 300s function
-  // ceiling on the Hobby plan. 2 attempts ≈ 75% success on a 50% success
-  // rate per call — good enough for V1; streaming parse (V1.5) eliminates
-  // the timeout class entirely.
-  let lastFailure: AttemptResult | null = null;
-  let validation: { success: true; data: z.infer<typeof parsedDocumentSchema> } | null =
-    null;
-  const retryHints = [
-    undefined,
-    "CRITICAL: Emit `blocks` as a TRUE JSON array — not as a JSON-encoded string. Output blocks: [{...}, {...}] not blocks: \"[...]\". Each block must be a separate object.",
-  ];
-  for (let attempt = 0; attempt < retryHints.length; attempt++) {
-    let result: AttemptResult;
-    try {
-      result = await attemptParse(retryHints[attempt]);
-    } catch (error) {
-      return classifyAnthropicErrorAsNextResponse<ParseFailure>(error);
-    }
-    if (result.ok) {
-      validation = { success: true, data: result.data };
-      break;
-    }
-    lastFailure = result;
-  }
+  // Streamed response. Long parses on real-world PDFs run 5–10 minutes
+  // end-to-end — well past the proxy's per-request response-time cap (300s)
+  // and Vercel Hobby's function maxDuration (300s). Returning a Server-Sent
+  // Events response with periodic keepalive bytes keeps the connection
+  // alive on both sides: the proxy sees data flowing every few seconds, and
+  // Vercel doesn't kill streaming functions while bytes are still being
+  // emitted. Final result + errors come back as named SSE events that the
+  // client (DocPane) consumes. Cache hits + probe failures (above) take
+  // the fast plain-JSON path and don't touch this code.
+  const encoder = new TextEncoder();
+  const sse = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: string, payload: unknown) => {
+        controller.enqueue(
+          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`),
+        );
+      };
+      // Keepalive ping every 10s. Comments (lines starting with `:`) are
+      // SSE-spec idle markers — no event delivered to client, just bytes
+      // on the wire to keep proxies + load balancers happy.
+      const ping = setInterval(() => {
+        try { controller.enqueue(encoder.encode(`: keepalive ${Date.now()}\n\n`)); }
+        catch { /* controller closed */ }
+      }, 10_000);
 
-  if (!validation) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: `Parse output failed after ${retryHints.length} attempts: ${
-          lastFailure?.reason ?? "unknown error"
-        }`,
-        debug: lastFailure?.shape,
-      },
-      { status: 502 },
-    );
-  }
+      try {
+        send("status", { stage: "parsing", message: "Sending PDF to Claude…" });
 
-  // 4. Enrich into a DocumentModel.
-  const now = Date.now();
-  const doc: DocumentModel = {
-    blocks: validation.data.blocks.map((b, index) => ({
-      id: nanoid(10),
-      kind: b.kind,
-      page: b.page,
-      order: index,
-      bboxHint: b.bboxHint,
-      revisions: [
-        {
-          text: b.text,
-          source: "original" as const,
-          createdAt: now,
-        },
-      ],
-      editable: isEditableKind(b.kind),
-    })),
-    history: [],
-    redoStack: [],
-  };
+        // Try up to 2 attempts (same retry policy as before — handles the
+        // occasional blocks-as-stringified-JSON quirk).
+        let lastFailure: AttemptResult | null = null;
+        let validated: z.infer<typeof parsedDocumentSchema> | null = null;
+        const retryHints = [
+          undefined,
+          "CRITICAL: Emit `blocks` as a TRUE JSON array — not as a JSON-encoded string. Output blocks: [{...}, {...}] not blocks: \"[...]\". Each block must be a separate object.",
+        ];
+        for (let attempt = 0; attempt < retryHints.length; attempt++) {
+          if (attempt > 0) {
+            send("status", { stage: "retry", attempt: attempt + 1, message: "Retrying with sharper instruction…" });
+          }
+          let result: AttemptResult;
+          try {
+            result = await attemptParse(retryHints[attempt]);
+          } catch (error) {
+            const errResp = classifyAnthropicErrorAsNextResponse<ParseFailure>(error);
+            const body = await errResp.json();
+            send("error", body);
+            return;
+          }
+          if (result.ok) { validated = result.data; break; }
+          lastFailure = result;
+        }
 
-  // 5. Persist to cache (best-effort).
-  await setCachedParse(body.hash, doc);
+        if (!validated) {
+          send("error", {
+            ok: false,
+            error: `Parse output failed after ${retryHints.length} attempts: ${
+              lastFailure?.reason ?? "unknown error"
+            }`,
+            debug: lastFailure?.shape,
+          });
+          return;
+        }
 
-  return NextResponse.json({ ok: true, cached: false, doc });
+        // Enrich into a DocumentModel.
+        const now = Date.now();
+        const doc: DocumentModel = {
+          blocks: validated.blocks.map((b, index) => ({
+            id: nanoid(10),
+            kind: b.kind,
+            page: b.page,
+            order: index,
+            bboxHint: b.bboxHint,
+            revisions: [{ text: b.text, source: "original" as const, createdAt: now }],
+            editable: isEditableKind(b.kind),
+          })),
+          history: [],
+          redoStack: [],
+        };
+
+        // Persist to cache (best-effort).
+        await setCachedParse(body.hash, doc);
+
+        send("result", { ok: true, cached: false, doc });
+      } catch (error) {
+        send("error", {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        clearInterval(ping);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(sse, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      "X-Accel-Buffering": "no",
+      Connection: "keep-alive",
+    },
+  });
 }

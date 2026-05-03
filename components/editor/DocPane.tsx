@@ -25,9 +25,52 @@ interface DocPaneProps {
 
 type ParseState =
   | { status: "idle" }
-  | { status: "loading" }
+  | { status: "loading"; stage?: string }
   | { status: "ready"; fromCache: boolean }
   | { status: "error"; error: string };
+
+interface ParseStreamHandlers {
+  onResult: (payload: { doc: unknown; cached?: boolean }) => void;
+  onError: (msg: string) => void;
+  onStatus: (msg: string) => void;
+}
+
+async function consumeParseStream(
+  body: ReadableStream<Uint8Array>,
+  handlers: ParseStreamHandlers,
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // Process complete events (separated by blank lines).
+      let blank;
+      while ((blank = buffer.indexOf("\n\n")) >= 0) {
+        const raw = buffer.slice(0, blank);
+        buffer = buffer.slice(blank + 2);
+        if (!raw || raw.startsWith(":")) continue; // keepalive comment
+        let eventName = "message";
+        let dataLine = "";
+        for (const line of raw.split("\n")) {
+          if (line.startsWith("event:")) eventName = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLine += line.slice(5).trim();
+        }
+        if (!dataLine) continue;
+        let payload: { doc?: unknown; cached?: boolean; error?: string; message?: string };
+        try { payload = JSON.parse(dataLine); } catch { continue; }
+        if (eventName === "status" && payload.message) handlers.onStatus(payload.message);
+        else if (eventName === "result" && payload.doc) handlers.onResult({ doc: payload.doc, cached: payload.cached });
+        else if (eventName === "error") handlers.onError(payload.error ?? "Parse failed");
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 type ViewMode = "edit" | "preview";
 
@@ -77,17 +120,35 @@ export function DocPane({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ blobUrl, hash }),
         });
-        // Defensive: server can return non-JSON on infra-level failures
-        // (Vercel HTML 502 page, gateway timeouts, etc.). Don't let
-        // `response.json()` blow up with "Unexpected token 'A'…" — fall
-        // back to HTTP status text + the body preview.
+        const contentType = response.headers.get("content-type") ?? "";
+
+        if (contentType.includes("text/event-stream") && response.body) {
+          // Streamed parse path — keepalive bytes flow during the long
+          // Anthropic call; result delivered as a final `event: result`.
+          await consumeParseStream(response.body, {
+            onResult: (payload) => {
+              if (cancelled) return;
+              setDoc(payload.doc as never);
+              setState({ status: "ready", fromCache: false });
+            },
+            onError: (msg) => {
+              if (cancelled) return;
+              setState({ status: "error", error: msg });
+            },
+            onStatus: (msg) => {
+              if (cancelled) return;
+              setState({ status: "loading", stage: msg });
+            },
+          });
+          return;
+        }
+
+        // Plain-JSON path — cache hit, validation failure, or probe error.
+        // Defensive parse so non-JSON 5xx (Vercel HTML 502 page, etc.)
+        // don't blow up with "Unexpected token 'A'…".
         const text = await response.text();
         let json: { ok?: boolean; doc?: unknown; cached?: boolean; error?: string } | null = null;
-        try {
-          json = text ? JSON.parse(text) : null;
-        } catch {
-          json = null;
-        }
+        try { json = text ? JSON.parse(text) : null; } catch { json = null; }
         if (cancelled) return;
         if (!response.ok || !json || !json.ok) {
           const friendly =
@@ -95,7 +156,7 @@ export function DocPane({
             (response.status === 504
               ? "Parse timed out. This PDF may be too complex for the current 300s limit — try a smaller file."
               : response.status >= 500
-                ? `Server returned HTTP ${response.status}. The parse may have hit an infrastructure limit (timeout, memory). Try again or use a smaller PDF.`
+                ? `Server returned HTTP ${response.status}. The parse may have hit an infrastructure limit. Try again or use a smaller PDF.`
                 : `HTTP ${response.status}`);
           setState({ status: "error", error: friendly });
           return;

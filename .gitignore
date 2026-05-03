@@ -53,3 +53,7 @@ Buoyant TH Assessment.md
 .vercel
 .env*.local
 .playwright-mcp/
+.claude/
+
+# Throwaway probe scripts (underscore-prefixed) — local testing only
+scripts/_*
