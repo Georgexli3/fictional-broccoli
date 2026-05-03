@@ -53,6 +53,8 @@ export function EditComposer({
   const intentPrefill = useSessionStore((s) => s.intentPrefill);
   const setIntentPrefill = useSessionStore((s) => s.setIntentPrefill);
   const kbHint = useSessionStore((s) => s.kbHints[block.id]);
+  const sessionMeta = useSessionStore((s) => s.meta);
+  const excludeHash = sessionMeta.ready ? sessionMeta.pdfHash : undefined;
 
   const selectionPrefill = useSessionStore((s) => s.selectionPrefill);
   const initialPrompt = selectionPrefill
@@ -85,6 +87,7 @@ export function EditComposer({
           userPrompt,
           contextBefore,
           contextAfter,
+          excludeHash,
         },
         {
           onChunk: (partial) => setResult(partial),
