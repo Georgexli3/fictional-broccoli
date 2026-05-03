@@ -243,7 +243,14 @@ export async function POST(request: Request): Promise<Response> {
         ];
         for (let attempt = 0; attempt < retryHints.length; attempt++) {
           if (attempt > 0) {
-            send("status", { stage: "retry", attempt: attempt + 1, message: "Retrying with sharper instruction…" });
+            send("status", {
+              stage: "retry",
+              attempt: attempt + 1,
+              message: "Retrying with sharper instruction…",
+              priorFailure: lastFailure
+                ? { reason: lastFailure.reason, shape: lastFailure.shape }
+                : null,
+            });
           }
           let result: AttemptResult;
           try {
