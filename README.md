@@ -2,9 +2,9 @@
 
 An AI editor for civil-engineering proposals. Upload a proposal PDF, click any block, and ask AI to tighten it, match firm voice, fix names, or reference past work. Every change is shown as a track-changes diff before you accept it — and exports as a Word `.docx` with native track changes that opens in the Review pane for accept/reject.
 
-**Live demo:** <https://fictional-broccoli-mu.vercel.app> — runs the current `main` branch (V1.7.3 + post-V1.7.3 stress-test fixes; see §6).
+**Live demo:** <https://fictional-broccoli-mu.vercel.app> — runs the current `main` branch (V1.7.3 + post-V1.7.3 stress-test fixes; see §7).
 
-> **Build status:** V1 shipped as planned (M1–M10). After V1, the PDF view itself was iterated three times — V1.5 added spatial overlays on the PDF, V1.6 attempted in-place text replacement, V1.7 dropped both and made the PDF a passive reference with all output flowing through Markdown / DOCX / HTML preview. The pivot story is in §3 — it's the most informative thing in this README.
+> **Build status:** V1 shipped as planned (M1–M10). After V1, the PDF view itself was iterated three times — V1.5 added spatial overlays on the PDF, V1.6 attempted in-place text replacement, V1.7 dropped both and made the PDF a passive reference with all output flowing through Markdown / DOCX / HTML preview. The pivot story is in §4 — and §3 has the consolidated trade-offs (the answers to "why this and not that?").
 
 ---
 
@@ -75,7 +75,7 @@ The product feels like Track Changes for PDFs with an AI inside, not like ChatGP
 
 Default 2-pane layout: editable DocPane (center, with Edit ↔ Preview tabs) + always-visible ChangesPanel (right, 320 px). The original PDF is hidden by default; a "Show original" toggle in the header expands a third 1fr column on the left for the read-only PDF reference.
 
-Why doc-first instead of PDF-first: V1 through V1.6 led with the PDF and tried to make it the live edited surface (overlays, then in-place text replacement). Both fought the typography tar-pit — see §3 for the full pivot story. V1.7 stops fighting it. The PDF is reference-only; edits surface in the DocPane (block-by-block) and in Preview mode (full-doc HTML with inline track-changes).
+Why doc-first instead of PDF-first: V1 through V1.6 led with the PDF and tried to make it the live edited surface (overlays, then in-place text replacement). Both fought the typography tar-pit — see §4 for the full pivot story. V1.7 stops fighting it. The PDF is reference-only; edits surface in the DocPane (block-by-block) and in Preview mode (full-doc HTML with inline track-changes).
 
 DocPane's Edit ↔ Preview tabs:
 - **Edit** — block list with click-to-edit, the V1 UX preserved.
@@ -127,7 +127,7 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 
 DOCX export is V1.7 work — explicitly included because the brief's stretch goal asks for "export back to PDF" but proposal-team review workflows are Word-integrated. DOCX with native track changes is more useful than a clean PDF rewrite for the proposal-review use case (legal/sales accept-rejects in Word's Review pane, no extra tooling).
 
-**Why no in-place text replacement on the original PDF** (preserving branding *and* updating text): silent-failure modes. PDF content streams are glyph-runs at positions, not characters. Replacing text requires re-encoding glyphs in the same embedded font subset (which may not contain new characters), recomputing position offsets, handling line wrap. Commercial libraries (PDFTron, Aspose) solve this at $thousands/year licensing. pdf-lib explicitly does not. **V1.6 attempted this anyway and proved the point** — see §3 for the post-mortem. The honest answers are: original PDF unchanged with markers (Annotated), fresh PDF (Clean), or Word with native track-changes (DOCX).
+**Why no in-place text replacement on the original PDF** (preserving branding *and* updating text): silent-failure modes. PDF content streams are glyph-runs at positions, not characters. Replacing text requires re-encoding glyphs in the same embedded font subset (which may not contain new characters), recomputing position offsets, handling line wrap. Commercial libraries (PDFTron, Aspose) solve this at $thousands/year licensing. pdf-lib explicitly does not. **V1.6 attempted this anyway and proved the point** — see §4 for the post-mortem. The honest answers are: original PDF unchanged with markers (Annotated), fresh PDF (Clean), or Word with native track-changes (DOCX).
 
 ### State: 3-tier (Blob + KV + localStorage)
 
@@ -145,7 +145,79 @@ DOCX export is V1.7 work — explicitly included because the brief's stretch goa
 
 ---
 
-## 3. What I cut and why
+## 3. Trade-offs (and what we'd do differently)
+
+The most-asked question at the demo will be "why X and not Y?" Each load-bearing decision below explains what we gained, what we gave up, and the scenario that would have flipped the call. The **What if** line is the honest answer to "would you make this same decision in a different context?"
+
+### Claude Sonnet 4.6 over OpenAI / GPT-4o
+
+- **Trades**: vendor flexibility (we lean into Anthropic's prompt caching + native PDF input).
+- **Gets**: less code (no provider-abstraction layer), the most mature PDF-input handling at the time of build, and a 20-edit cached session at ~$0.10.
+- **What if** the customer already used OpenAI tooling: we'd swap. The provider client lives in `lib/anthropic.ts` (one file) and the model name is a string constant. Everything above that line — `streamEdit`, `parse`, `kb` — is provider-agnostic.
+
+### Block-level edits over span-level (character-precise)
+
+- **Trades**: a true surgical-edit data model where the user marks an exact range and the AI changes only that.
+- **Gets**: a uniform doc model (every block has the same shape), better LLM context (whole-block prompts produce better edits than fragments), and tighter UX (one click → one composer).
+- **What if** users consistently asked for character-precise edits: we'd add a span layer. The current span-aware **prefill** ("drag-select 'Alejandra' → composer pre-fills `Replace 'Alejandra' with `") gives the surgical *feel* without the data-model cost. If the model started missing intent on long blocks, we'd add the layer next.
+
+### Doc-first layout (V1.7), PDF as opt-in reference
+
+- **Trades**: the demo-friendly "I edit the PDF and it changes in real time" pitch.
+- **Gets**: a layout that actually works. V1.5 spatial overlays and V1.6 in-place text replacement both fought the PDF typography tar-pit (post-mortems in §4).
+- **What if** we had a commercial PDF-editing license (Apryse / PDFTron / PSPDFKit, ~$thousands/year): we'd reverse the architecture. PDF as the live editable surface, with their typography-aware text-replacement APIs handling what `pdf-lib` can't. Without that, doc-first is the honest call.
+
+### DOCX with native track-changes as the headline export
+
+- **Trades**: PDF-as-final-output as the primary mental model.
+- **Gets**: alignment with the actual review workflow. Proposal teams accept/reject in Word's Review pane; that's where legal and sales sign off. Markdown / Clean PDF / Annotated stay as alternates for edge cases.
+- **What if** the customer was a marketing team using InDesign / Affinity, not a proposal team using Word: Clean PDF + HTML preview would be primary, DOCX secondary. The export menu's order reflects the **proposal team** workflow specifically.
+
+### Deterministic KB matcher (token overlap) over vector embeddings
+
+- **Trades**: semantic matching that handles synonyms ("stormwater" ≈ "drainage" ≈ "watershed").
+- **Gets**: zero ML infra, deterministic results, ~10 ms over a 100-block doc, no embedding cost per edit. At 5 KB items, similarity search is noise — token overlap with a stopword filter actually performs better in practice.
+- **What if** the KB grew to 50+ items: the deterministic matcher hits its precision wall. We'd add an LLM rerank on top of the deterministic pass (queued in §8). Vector retrieval only becomes mandatory at ~hundreds of items.
+
+### `localStorage` for sessions, no database
+
+- **Trades**: cross-device resume, multi-user collab, server-authoritative state.
+- **Gets**: zero-auth setup, instant page loads, full feature set without provisioning anything. The persistence boundary in `lib/persistence.ts` is the single swap point — V2's Postgres migration touches one file.
+- **What if** the brief specified multi-user from day 1: auth (Clerk) + Postgres at #1 in §8. The doc-model's per-block revision stack was *designed* with this in mind — `Revision.editId` + `createdAt` migrate cleanly to an op-log.
+
+### Knowledge base distilled at build time, not retrieved at runtime
+
+- **Trades**: dynamic / always-current KB content.
+- **Gets**: prompt cache hits (~50% input-cost reduction on edits), build-time inspectability (everything in `kb/` is committed and reviewable), zero per-edit retrieval overhead.
+- **What if** customers had hundreds of past proposals: RAG with embeddings + a vector store becomes mandatory. Build-time distillation tops out around 30K tokens of context; beyond that the cache stops paying.
+
+### Annotated PDF export via overlay markers, not text replacement
+
+- **Trades**: PDFs that look like the original with the new text typeset in.
+- **Gets**: zero silent-failure modes. PDF text replacement requires same-font glyph re-encoding, position-offset recompute, and line-wrap handling — V1.6 proved the failure modes are not graceful.
+- **What if** we had Apryse / PDFTron: same answer as the doc-first decision — flip to in-place. Without paid tools, overlay markers + a Changes Summary appendix is the DocuSign / HelloSign pattern: 95% of user value, zero silent failures.
+
+### Single-user V1, multi-user as V2
+
+- **Trades**: collab, presence, simultaneous editing — table stakes for SaaS in 2025.
+- **Gets**: scope. Auth + presence + conflict resolution is multiple weeks of work; the brief was 4 hours.
+- **What if** the brief required a collaborative MVP: auth + Postgres + per-block locks would be #1 from day 1, and the per-block revision stack would have been an op-log from the start. Confirmation that v2 is multi-user is what makes this the #1 next-up item.
+
+### Vercel-only deploy, no platform abstraction
+
+- **Trades**: portability to AWS / GCP / Azure.
+- **Gets**: free Blob + KV + Anthropic-proxy networking on the same provider, fast iteration, no infra code.
+- **What if** an enterprise customer required AWS: substantial rewrite. Blob → S3, KV → DynamoDB or ElastiCache, edge → Lambda + API Gateway. The app is otherwise vendor-neutral above those adapters.
+
+### CI runs typecheck + lint + Vitest, not Playwright e2e
+
+- **Trades**: regression-catching breadth in CI.
+- **Gets**: fast green-checkmark feedback (under 60 s), no flakiness from headless-browser timing, zero CI minutes burned on slow tests.
+- **What if** the codebase had multiple contributors on a real release cadence: e2e in CI with sharding + retry. For this take-home's surface area + single-author velocity, manual e2e against the live URL is faster.
+
+---
+
+## 4. What I cut and why
 
 The interesting cuts are the ones I built first and then deliberately removed. After V1 shipped, I iterated three times on what the PDF view should *be*. Two iterations got built and then cut. Telling that story straight is the highest-signal thing in this README — and it's exactly the kind of "had an opinion, validated against reality, changed my mind" reasoning the brief asks for.
 
@@ -177,11 +249,11 @@ This sits more honestly with the rest of the design. Proposal-team review workfl
 
 | Cut | Why |
 |---|---|
-| **Multi-paragraph chat surface** | Dilutes the trust thesis at V1; cleanest add once the per-block reliability is proven. Top of the §7 next-up list now that DOCX is shipped. |
+| **Multi-paragraph chat surface** | Dilutes the trust thesis at V1; cleanest add once the per-block reliability is proven. Top of the §8 next-up list now that DOCX is shipped. |
 | **In-place PDF text replacement (V1.6)** | Documented above. Honest answer: Word with track-changes solves the same problem more reliably. |
 | **Spatial overlays on the PDF (V1.5)** | Documented above. Replaced by the always-visible ChangesPanel. |
-| **Hard-fixture multi-column / tables** | A real fix is parser-level (LlamaParse / structured extraction pre-pass), not an MVP feature. Documented as known limitation in §4. |
-| **Auth + multi-user / Postgres** | Single-user V1 demo. **You confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
+| **Hard-fixture multi-column / tables** | A real fix is parser-level (LlamaParse / structured extraction pre-pass), not an MVP feature. Documented as known limitation in §5. |
+| **Auth + multi-user / Postgres** | Single-user V1 demo. **You confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §8 — the data model was designed for clean migration. |
 | **Vector retrieval / embeddings for KB** | At 5 KB items, similarity search is noise. Inlined + cached is correct at this scale. |
 | **Component tests / visual regression / Playwright in CI** | Manual UI testing is faster for this surface; CI stays lint+typecheck+Vitest. |
 | **Real analytics backend** | Event vocabulary is scaffolded (`lib/track.ts` + `/api/events`). Posthog wiring is a 30-min V1.5 task. |
@@ -191,7 +263,7 @@ This sits more honestly with the rest of the design. Proposal-team review workfl
 
 ---
 
-## 4. Failure modes I worried about
+## 5. Failure modes I worried about
 
 ### Tier 1 — Hard-fail with explicit UI handling (handled in code)
 
@@ -242,11 +314,11 @@ Three offline evals, gating any rollout:
 
 A fourth eval ("voice-match" — does the edit *sound* like the firm? LLM-judge against the synthesized voice doc) is the natural follow-on once we ship Posthog and have real 👎-with-reason labels to fine-tune against.
 
-Plus the production observability described in §5 to watch all four failure modes in the wild.
+Plus the production observability described in §6 to watch all four failure modes in the wild.
 
 ---
 
-## 5. How I'd evaluate this in production
+## 6. How I'd evaluate this in production
 
 **3-layer framework: in-product metrics + per-edit user signal + offline evals.**
 
@@ -270,11 +342,11 @@ V1 ships the event vocabulary (`lib/track.ts`) and a no-op `/api/events` endpoin
 
 ### Layer 3 — Offline evals (run before any prompt change ships)
 
-Three suites, all described in §4 — and per your guidance they're equally load-bearing. V1 ships the **name-fidelity** suite as the one-suite proof-of-pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded). Edit-faithfulness and annotated-accuracy are the two next-up suites; both are scaffolded and would land before paying customers.
+Three suites, all described in §5 — and per your guidance they're equally load-bearing. V1 ships the **name-fidelity** suite as the one-suite proof-of-pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded). Edit-faithfulness and annotated-accuracy are the two next-up suites; both are scaffolded and would land before paying customers.
 
 ---
 
-## 6. What I added beyond the brief and why
+## 7. What I added beyond the brief and why
 
 | Addition | Why |
 |---|---|
@@ -326,7 +398,7 @@ What this pass *didn't* find that I'd want a v2 to: visual regression tests (eve
 
 ---
 
-## 7. What I'd build next given another 8 hours
+## 8. What I'd build next given another 8 hours
 
 You confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps to **#2** (DOCX shipped in V1.7, freeing the slot). The new top item is RFP-aware editing — the bottleneck I'd target next if I were trying to make the product 10× more useful in a single feature.
 
@@ -340,12 +412,12 @@ In priority order:
 6. **Hard-fixture support: multi-column reading order + table fidelity** (~1.5 hr) — LlamaParse or structured-extraction pre-pass for problem PDFs; fall back to current parser.
 7. **Posthog wiring + Sentry + per-IP rate limiting on `/api/edit`** (~30 min) — turns the event-logging scaffolding into real production observability and protects spend.
 
-**Already shipped post-V1** *(captured here for the rubric pass; details in §3 / §6):*
+**Already shipped post-V1** *(captured here for the rubric pass; details in §4 / §7):*
 - V1.7.2 — Proactive KB hints (📎 chip on relevant blocks).
 - V1.7.1 — Encrypted/image-only PDF detection in `/api/parse`; Anthropic 429/5xx classifier with actionable messages.
 - V1.7 — Doc-first layout, DOCX export with native Word track changes, HTML preview pane.
-- V1.6 — Cover-and-replace text on PDF (cut after testing — see §3).
-- V1.5 — Spatial overlays on PDF (cut after testing — see §3).
+- V1.6 — Cover-and-replace text on PDF (cut after testing — see §4).
+- V1.5 — Spatial overlays on PDF (cut after testing — see §4).
 
 Threaded comments + @-mentions on edits, role-based permissions (only principals can accept "Reference past work" edits), and PDF redlining for cross-firm partner reviews are the v2.5 backlog these unlock.
 
