@@ -58,8 +58,10 @@ Or deploy to Vercel — the storage env vars auto-inject. The KB build (`pnpm bu
 
 The brief lists fixtures `proposals/easy.pdf` (clean single-column 6–8 page) and `proposals/hard.pdf` (multi-column, table, headers/footers, embedded image) — but those files were not provided to us. We substitute from the user-provided proposals:
 
-- **De facto easy fixture:** `ExampleProposals/MECOProposals/1_Copy of City of Dixon SOQ.pdf` (13 MB / 8 pp, ~136 parsed blocks). The end-to-end demo runs against this.
+- **De facto easy fixture:** `ExampleProposals/MECOProposals/1_Copy of City of Dixon SOQ.pdf` (13 MB / 8 pp, ~136 parsed blocks). Cached in runtime KV — instant load.
 - **De facto hard fixture:** `ExampleProposals/AlphaCMProposals/Windsor ORH proposal.pdf` (24 pp, InDesign, TOC dot leaders, multi-section, appendices). Closer to the brief's hard-fixture archetype in *structural complexity* — file size is not the signal.
+
+> **Fresh uploads work for any size PDF.** `/api/parse` returns a Server-Sent Events response with periodic keepalive bytes during the long Anthropic call. Empirical: Hunnewell (22 MB / 30+ pp) parses end-to-end in ~10 minutes (372 blocks); Dixon hits the cache in <1 second. The streaming architecture sidesteps the proxy's per-request timeout that would otherwise kill long parses at ~300s. See §4 failure mode #21 for the full story.
 
 If you provide the intended `kb/` and `proposals/` folders before submission, we'd swap the KB source.
 
@@ -297,7 +299,7 @@ This sits more honestly with the rest of the design. Proposal-team review workfl
 | 18 | Browser crash loses pending (un-accepted) edit | Pending proposals only persist on Accept |
 | 19 | Mobile / small screen | V1 is desktop-first; banner < 1024px would be V1.5 |
 | 20 | "Reference past work" hallucination | Mitigated by KB grounding + system prompt; not eliminated. Detection requires LLM-judge offline eval (scaffolded; not run for V1) |
-| 21 | **Long / heavy PDFs may exceed 300s Vercel function ceiling** | The AlphaCM Windsor proposal (24-page InDesign with TOC + multi-section + appendices) consistently runs the parse + 1 retry past the 300s Vercel Hobby function maxDuration. Resolved by streaming the parse response so the connection stays alive during long generations — that's the V1.5 streamed-parse item. Dixon SOQ (8 pages, simpler structure) parses cleanly within budget. README's "demo flow" runs against Dixon. |
+| 21 | **Long parses on large PDFs would otherwise exceed the proxy's per-request timeout** | First-discovered as a hard wall: every fresh fixture larger than Dixon timed out at exactly 300s, regardless of plan tier — that's the proxy's per-request response-time cap, not Vercel's function ceiling. **Resolved (V1.7.5) by switching `/api/parse` to a Server-Sent Events response with periodic keepalive bytes.** Continuous bytes on the wire keep the proxy and Vercel happy as long as the parse is still running. Empirical: Hunnewell (22 MB / 30+ pp) parses end-to-end in ~620s with 59 keepalive pings flowing; first attempt hit `stop_reason: max_tokens` at 16K, retry succeeded at 64K. The route's `max_tokens` was bumped to 65536 (Sonnet 4.6 practical ceiling) and the failure-shape now logs `stop_reason` + `rawInputKeys` so token-budget exhaustion is immediately diagnosable from the SSE error event. Cache hits + probe failures still take the fast plain-JSON path (no streaming overhead). |
 | 22 | **Anthropic occasionally returns `blocks` as a JSON-encoded string** (sometimes with malformed inner quotes) | Surfaced in production e2e. Mitigated with multi-unwrap defensive coercion + 2-attempt retry with progressively sharper instruction. Long-term fix: switch tool-use array output to JSONL streaming; that's also the V1.5 streamed-parse work. |
 
 ### What I'd check before letting a paying customer use it
