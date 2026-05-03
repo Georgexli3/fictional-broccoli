@@ -6,7 +6,7 @@ export default function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-8 px-6 py-12">
       <div className="space-y-3 text-center">
         <h1 className="text-4xl font-semibold tracking-tight">
-          Buoyant Proposal Editor
+          AI Proposal Editor
         </h1>
         <p className="text-muted-foreground max-w-xl text-base">
           Upload a proposal PDF; edit it block-by-block with AI grounded in

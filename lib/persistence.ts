@@ -19,7 +19,7 @@
 import type { DocumentModel, EditHistoryItem } from "./doc-model";
 
 export const SESSION_SCHEMA_VERSION = 1 as const;
-const STORAGE_KEY = "buoyant.session.v1";
+const STORAGE_KEY = "proposal-editor.session.v1";
 
 export interface SessionState {
   version: typeof SESSION_SCHEMA_VERSION;

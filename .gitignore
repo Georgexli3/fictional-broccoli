@@ -38,6 +38,10 @@ playwright/.cache/
 tsconfig.tsbuildinfo
 *.tsbuildinfo
 
+# Private take-home assessment doc — never commit
+Buoyant TH Assessment.md
+*Assessment.md
+
 # Temp PDF research artifact (from planning phase)
 /tmp/_pdf_research_venv/
 

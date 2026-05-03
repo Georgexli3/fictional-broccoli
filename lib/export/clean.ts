@@ -34,7 +34,7 @@ export async function exportCleanPdf(
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.setTitle(title);
-  pdf.setProducer("Buoyant Proposal Editor");
+  pdf.setProducer("AI Proposal Editor");
 
   const fontBody = await pdf.embedFont(StandardFonts.TimesRoman);
   const fontBodyItalic = await pdf.embedFont(StandardFonts.TimesRomanItalic);
@@ -48,7 +48,7 @@ export async function exportCleanPdf(
     advance(ctx, FONT_COVER_SIZE * 1.5);
     drawText(
       ctx,
-      `Edited with Buoyant — ${new Date().toLocaleDateString()}`,
+      `AI-edited — ${new Date().toLocaleDateString()}`,
       fontBodyItalic,
       9,
       { color: rgb(0.4, 0.4, 0.4) },

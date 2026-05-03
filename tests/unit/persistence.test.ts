@@ -54,7 +54,7 @@ describe("persistence (localStorage round-trip)", () => {
 
   it("returns null on schema mismatch (forward-compat)", () => {
     window.localStorage.setItem(
-      "buoyant.session.v1",
+      "proposal-editor.session.v1",
       JSON.stringify({ version: 99, junk: true }),
     );
     expect(readSession()).toBeNull();

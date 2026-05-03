@@ -51,7 +51,7 @@ export async function exportAnnotatedPdf(
   const { originalPdfBytes, doc, title } = input;
 
   const pdf = await PDFDocument.load(originalPdfBytes);
-  pdf.setProducer("Buoyant Proposal Editor");
+  pdf.setProducer("AI Proposal Editor");
   pdf.setTitle(`${title} — Annotated`);
 
   const helvetica = await pdf.embedFont(StandardFonts.HelveticaBold);

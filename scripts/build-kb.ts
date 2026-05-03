@@ -16,7 +16,7 @@
  * Cost: ~$1 in Anthropic credit per full run (parse + distill + voice).
  *
  * Requires:
- *   ANTHROPIC_API_KEY set (locally — Buoyant proxy token from Eric).
+ *   ANTHROPIC_API_KEY set (locally — proxy token from the hiring contact).
  */
 
 export {};
@@ -64,11 +64,10 @@ function ensureDirs() {
 
 function getClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const baseURL =
-    process.env.ANTHROPIC_BASE_URL ?? "https://hiring-proxy.trybuoyant.ai/anthropic";
-  if (!apiKey) {
+  const baseURL = process.env.ANTHROPIC_BASE_URL;
+  if (!apiKey || !baseURL) {
     console.error(
-      "ANTHROPIC_API_KEY missing. Set it in .env.local (or environment) before running build:kb.",
+      "ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL are required. Set them in .env.local (or environment) before running build:kb.",
     );
     process.exit(1);
   }

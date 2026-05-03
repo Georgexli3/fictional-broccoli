@@ -31,7 +31,7 @@ import {
 import { computeDiff } from "../diff";
 import { currentText, type Block, type DocumentModel } from "../doc-model";
 
-const AUTHOR = "Buoyant Editor";
+const AUTHOR = "AI Editor";
 
 export async function exportDocx(
   doc: DocumentModel,
@@ -55,7 +55,7 @@ export async function exportDocx(
       spacing: { after: 480 },
       children: [
         new TextRun({
-          text: `Edited with Buoyant — ${new Date().toLocaleDateString()}`,
+          text: `AI-edited — ${new Date().toLocaleDateString()}`,
           italics: true,
           size: 18,
           color: "666666",
@@ -116,9 +116,9 @@ export async function exportDocx(
   }
 
   const docDef = new Document({
-    creator: "Buoyant Proposal Editor",
+    creator: "AI Proposal Editor",
     title,
-    description: "Proposal edited with Buoyant. Word track-changes enabled.",
+    description: "AI-edited proposal. Word track-changes enabled.",
     sections: [{ children: paragraphs }],
   });
 

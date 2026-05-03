@@ -1,4 +1,4 @@
-# Buoyant Proposal Editor — Founding Engineer Take-Home
+# AI Proposal Editor — Founding Engineer Take-Home
 
 An AI editor for civil-engineering proposals. Upload a proposal PDF, click any block, and ask AI to tighten it, match firm voice, fix names, or reference past work. Every change is shown as a track-changes diff before you accept it — and exports as a Word `.docx` with native track changes that opens in the Review pane for accept/reject.
 
@@ -13,7 +13,7 @@ An AI editor for civil-engineering proposals. Upload a proposal PDF, click any b
 
 ```bash
 pnpm install
-cp .env.example .env.local      # then fill in ANTHROPIC_API_KEY (from Eric)
+cp .env.example .env.local      # then fill in ANTHROPIC_API_KEY (from the hiring contact)
 pnpm dev
 ```
 
@@ -36,8 +36,8 @@ Or deploy to Vercel — the storage env vars auto-inject. The KB build (`pnpm bu
 
 | Variable | Purpose | Source |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Buoyant proxy auth token (works for both Anthropic and OpenAI endpoints) | Eric (separately) |
-| `ANTHROPIC_BASE_URL` | Proxy base URL | Defaults to `https://hiring-proxy.trybuoyant.ai/anthropic` |
+| `ANTHROPIC_API_KEY` | Hiring-proxy auth token (works for both Anthropic and OpenAI endpoints) | Provided separately by the hiring contact |
+| `ANTHROPIC_BASE_URL` | Proxy base URL | Defaults to the take-home hiring-proxy URL provided in the brief |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob (PDF storage) | Auto-injected on Vercel |
 | `KV_REST_API_URL` | Vercel KV (parse cache) | Auto-injected on Vercel |
 | `KV_REST_API_TOKEN` | Vercel KV (parse cache) | Auto-injected on Vercel |
@@ -62,7 +62,7 @@ The brief lists fixtures `proposals/easy.pdf` (clean single-column 6–8 page) a
 - **De facto easy fixture:** `ExampleProposals/MECOProposals/1_Copy of City of Dixon SOQ.pdf` (smallest MECO at 13 MB / 24 pp). The end-to-end demo runs against this.
 - **De facto hard fixture:** `ExampleProposals/AlphaCMProposals/Windsor ORH proposal.pdf` (24 pp, InDesign, TOC dot leaders, multi-section, appendices). Closer to the brief's hard-fixture archetype in *structural complexity* — file size is not the signal.
 
-If Buoyant provides the intended `kb/` and `proposals/` folders before submission, we'd swap the KB source.
+If the hiring team provides the intended `kb/` and `proposals/` folders before submission, we'd swap the KB source.
 
 ---
 
@@ -70,7 +70,7 @@ If Buoyant provides the intended `kb/` and `proposals/` folders before submissio
 
 ### Thesis: fidelity-first precision editor
 
-The product feels like Track Changes for PDFs with an AI inside, not like ChatGPT-with-a-doc. Diffs by default, accept/reject every change, original PDF always visible. We trade away "creative chat with the doc" in favor of trust, transparency, and pixel-context fidelity — because the brief's own description of the loop (*"The user sees what changed and decides whether to apply it"*) is a trust pattern, not a creative pattern. Buoyant's customers review high-stakes proposals; trust > capability.
+The product feels like Track Changes for PDFs with an AI inside, not like ChatGPT-with-a-doc. Diffs by default, accept/reject every change, original PDF always visible. We trade away "creative chat with the doc" in favor of trust, transparency, and pixel-context fidelity — because the brief's own description of the loop (*"The user sees what changed and decides whether to apply it"*) is a trust pattern, not a creative pattern. Engineering / consulting firms review high-stakes proposals; trust > capability.
 
 ### Architecture: doc-first, PDF as opt-in reference (V1.7)
 
@@ -121,12 +121,12 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 
 ### Export: 4 formats; DOCX with track changes is the headline
 
-- **Word (.docx) with track changes** *(recommended, V1.7)* — every accepted edit becomes a real Word `<w:ins>` / `<w:del>` revision via the `docx` package's `InsertedTextRun` / `DeletedTextRun`. When the file opens in Word it shows as proper redline markup with the Review pane offering accept/reject per change, attributed to "Buoyant Editor." This is the format proposal teams actually need — they review in Word.
+- **Word (.docx) with track changes** *(recommended, V1.7)* — every accepted edit becomes a real Word `<w:ins>` / `<w:del>` revision via the `docx` package's `InsertedTextRun` / `DeletedTextRun`. When the file opens in Word it shows as proper redline markup with the Review pane offering accept/reject per change, attributed to "AI Editor." This is the format proposal teams actually need — they review in Word.
 - **Markdown** — clean text for Word / Notion / Slack paste.
 - **Clean PDF** — pdf-lib regenerates a fresh PDF from the edited doc model. Loses original branding; gains accuracy on edited text content.
 - **Annotated Original** — overlay numbered colored markers on the original PDF + append a Changes Summary page enumerating every edit with before/after text. Preserves branding 100%; never modifies content streams. For review/redlining workflows.
 
-DOCX export is V1.7 work — explicitly included because the brief stretch goal asks for "export back to PDF" and Buoyant's actual product is Word-integrated. DOCX with native track changes is more useful than a clean PDF rewrite for the proposal-review use case (legal/sales accept-rejects in Word's Review pane, no extra tooling).
+DOCX export is V1.7 work — explicitly included because the brief's stretch goal asks for "export back to PDF" but proposal-team review workflows are Word-integrated. DOCX with native track changes is more useful than a clean PDF rewrite for the proposal-review use case (legal/sales accept-rejects in Word's Review pane, no extra tooling).
 
 **Why no in-place text replacement on the original PDF** (preserving branding *and* updating text): silent-failure modes. PDF content streams are glyph-runs at positions, not characters. Replacing text requires re-encoding glyphs in the same embedded font subset (which may not contain new characters), recomputing position offsets, handling line wrap. Commercial libraries (PDFTron, Aspose) solve this at $thousands/year licensing. pdf-lib explicitly does not. **V1.6 attempted this anyway and proved the point** — see §3 for the post-mortem. The honest answers are: original PDF unchanged with markers (Annotated), fresh PDF (Clean), or Word with native track-changes (DOCX).
 
@@ -142,7 +142,7 @@ DOCX export is V1.7 work — explicitly included because the brief stretch goal 
 
 **Resume:** on home-page boot, the resume banner reads localStorage and offers to continue. One of the brief's "UX details that matter" — a 20-edit session shouldn't vanish on a refresh.
 
-**Designed with multi-user V2 in mind.** Eric confirmed proposals are typically worked on by multiple roles (proposal writer, engineers, principals). V1 is single-user, but the doc-model's per-block revision stack design is forward-compatible with an op-log / CRDT model: each `Revision` carries a stable `editId` and timestamps, so the migration path to a server-authoritative state with presence + multi-user merging is clean. localStorage will swap for server-stored sessions, and the persistence boundary in `lib/persistence.ts` is the single swap point.
+**Designed with multi-user V2 in mind.** The hiring contact confirmed proposals are typically worked on by multiple roles (proposal writer, engineers, principals). V1 is single-user, but the doc-model's per-block revision stack design is forward-compatible with an op-log / CRDT model: each `Revision` carries a stable `editId` and timestamps, so the migration path to a server-authoritative state with presence + multi-user merging is clean. localStorage will swap for server-stored sessions, and the persistence boundary in `lib/persistence.ts` is the single swap point.
 
 ---
 
@@ -172,7 +172,7 @@ The honest takeaway: PDF content streams are glyph-runs at positions, not charac
 
 The fix: stop trying to make the PDF the live edited surface. PDF becomes a passive read-only reference, hidden behind a "Show original" toggle in the header (default off). All edited output flows through the DocPane and through exports — Markdown, Word `.docx` with native track changes, Clean PDF, Annotated original. The DocPane gets Edit ↔ Preview tabs; Preview is full-doc HTML with inline track-changes, and the browser's native print-to-PDF gives a clean output PDF for free.
 
-This sits more honestly with the rest of the design. Buoyant's actual product workflow is Word-integrated — proposal teams review and accept changes in Word's Review pane. Word is the universal format. A "perfect" PDF re-render was never the right goal for this customer.
+This sits more honestly with the rest of the design. Proposal-team review workflows are Word-integrated — reviewers accept changes in Word's Review pane. Word is the universal format. A "perfect" PDF re-render was never the right goal for this customer.
 
 ### Other things considered and cut
 
@@ -182,7 +182,7 @@ This sits more honestly with the rest of the design. Buoyant's actual product wo
 | **In-place PDF text replacement (V1.6)** | Documented above. Honest answer: Word with track-changes solves the same problem more reliably. |
 | **Spatial overlays on the PDF (V1.5)** | Documented above. Replaced by the always-visible ChangesPanel. |
 | **Hard-fixture multi-column / tables** | A real fix is parser-level (LlamaParse / structured extraction pre-pass), not an MVP feature. Documented as known limitation in §4. |
-| **Auth + multi-user / Postgres** | Single-user V1 demo. **Eric confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
+| **Auth + multi-user / Postgres** | Single-user V1 demo. **The hiring contact confirmed v2 is multi-user collaborative**, so this becomes the #1 V2 priority in §7 — the data model was designed for clean migration. |
 | **Vector retrieval / embeddings for KB** | At 5 KB items, similarity search is noise. Inlined + cached is correct at this scale. |
 | **Component tests / visual regression / Playwright in CI** | Manual UI testing is faster for this surface; CI stays lint+typecheck+Vitest. |
 | **Real analytics backend** | Event vocabulary is scaffolded (`lib/track.ts` + `/api/events`). Posthog wiring is a 30-min V1.5 task. |
@@ -233,7 +233,7 @@ This sits more honestly with the rest of the design. Buoyant's actual product wo
 
 ### What I'd check before letting a paying customer use it
 
-**Per Eric's clarification, all four rejection categories matter equally** — hallucination, wrong tone, lost information, and "sounded like AI" are equally serious failure modes for proposal editing. The eval suite is built to test all four, none deprioritized.
+**Per the hiring contact's clarification, all four rejection categories matter equally** — hallucination, wrong tone, lost information, and "sounded like AI" are equally serious failure modes for proposal editing. The eval suite is built to test all four, none deprioritized.
 
 Three offline evals, gating any rollout:
 
@@ -271,7 +271,7 @@ V1 ships the event vocabulary (`lib/track.ts`) and a no-op `/api/events` endpoin
 
 ### Layer 3 — Offline evals (run before any prompt change ships)
 
-Three suites, all described in §4 — and per Eric they're equally load-bearing. V1 ships the **name-fidelity** suite as the one-suite proof-of-pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded). Edit-faithfulness and annotated-accuracy are the two next-up suites; both are scaffolded and would land before paying customers.
+Three suites, all described in §4 — and per the hiring contact they're equally load-bearing. V1 ships the **name-fidelity** suite as the one-suite proof-of-pattern (`evals/name-fidelity.test.ts` — placeholder structure scaffolded). Edit-faithfulness and annotated-accuracy are the two next-up suites; both are scaffolded and would land before paying customers.
 
 ---
 
@@ -280,7 +280,7 @@ Three suites, all described in §4 — and per Eric they're equally load-bearing
 | Addition | Why |
 |---|---|
 | **Proactive KB hints** *(V1.7.2)* | The KB was the most underused thing in V1 — it only fired when the user clicked "Reference past work" inside the composer. V1.7.2 makes it ambient: every block silently scores against per-proposal topic bags on doc load; relevant blocks get a 📎 chip in the metadata row showing the matched past project. One click → composer opens with the hint preview banner and the `reference_past_work` edit auto-fires. Pure deterministic matcher (no LLM, no embeddings — at 5 KB items vector search would be noise) with stopword filtering tuned for precision over recall. ~10 ms over a 100-block doc. |
-| **Word `.docx` export with native track changes** *(V1.7, headline)* | Each accepted edit becomes a `<w:ins>` / `<w:del>` revision via the `docx` package. Opens in Word's Review pane with accept/reject for each change, attributed to "Buoyant Editor." This is what proposal teams actually use to review redlines — the brief's "export to PDF" stretch goal is the literal interpretation; Word with track-changes is the *useful* one. |
+| **Word `.docx` export with native track changes** *(V1.7, headline)* | Each accepted edit becomes a `<w:ins>` / `<w:del>` revision via the `docx` package. Opens in Word's Review pane with accept/reject for each change, attributed to "AI Editor." This is what proposal teams actually use to review redlines — the brief's "export to PDF" stretch goal is the literal interpretation; Word with track-changes is the *useful* one. |
 | **Live HTML preview pane** *(V1.7)* | DocPane gets an Edit ↔ Preview tab. Preview renders the full doc as styled HTML with inline track-changes (red strikethrough + green underline). Print-to-PDF from this view gives a clean output PDF for free, no PDF-rebuilding logic needed. |
 | **Annotated Original PDF export** preserving branding via overlay | Brief's stretch asks for "re-render to PDF"; we went deeper because the dominant customer scenario (partner's PDF, recycled past proposal) can't assume source files exist. |
 | **PDF.js text-layer fuzzy matcher** for bbox resolution | Defensive use of original PDF as ground truth. LLM-emitted geometry is the wrong place to put trust. |
@@ -312,7 +312,7 @@ Three suites, all described in §4 — and per Eric they're equally load-bearing
 
 ## 7. What I'd build next given another 8 hours
 
-Eric confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps to **#2** (DOCX shipped in V1.7, freeing the slot). The new top item is RFP-aware editing — the bottleneck I'd target next if I were trying to make the product 10× more useful in a single feature.
+The hiring contact confirmed v2 is multi-user collaborative — proposals are typically worked on by multiple roles (proposal writer, engineers, principals). That answer reshuffled the priorities below: collaboration infrastructure jumps to **#2** (DOCX shipped in V1.7, freeing the slot). The new top item is RFP-aware editing — the bottleneck I'd target next if I were trying to make the product 10× more useful in a single feature.
 
 In priority order:
 
@@ -335,13 +335,13 @@ Threaded comments + @-mentions on edits, role-based permissions (only principals
 
 ---
 
-## Open questions for Eric
+## Open questions for the hiring contact
 
 All three are now answered:
 
-1. **What's typically wrong when customers reject AI suggestions?** *Eric: "Everything you've brought up are things we've built into Buoyant bc they're all real concerns and equally important."* All four (hallucination, wrong tone, lost info, "sounded like AI") matter equally. We've kept the system-prompt guardrails for all four (no new claims, voice grounding, no info loss, minimum-edit) and weighted the eval suite to cover all four — see §4 and §5 (Layer 3).
-2. **Is v2 single-user or multi-user collaborative?** *Eric: "Multi-user as proposals are typically worked on by multiple people at all firms ie proposals writer, engineers, principles, etc."* V2 is multi-user. The §7 priority order now puts auth + Postgres + collab data layer at #1; we designed V1's per-block revision stack to migrate cleanly to an operation log (attributed, timestamped). The persistence boundary in `lib/persistence.ts` is the single swap point.
-3. **What's in the KB?** *Eric: "A large part of a customer's KB is past proposals … we've included 5 proposals for MECO. You can pick one as the proposal you're working on and treat the others as past proposals in the knowledge base."* We use the 5 MECO PDFs at `ExampleProposals/MECOProposals/`, with the active doc excluded by SHA-256 hash at runtime so it's never fed to itself as past-work context.
+1. **What's typically wrong when customers reject AI suggestions?** *Hiring contact: "Everything you've brought up are things we've built into the product bc they're all real concerns and equally important."* All four (hallucination, wrong tone, lost info, "sounded like AI") matter equally. We've kept the system-prompt guardrails for all four (no new claims, voice grounding, no info loss, minimum-edit) and weighted the eval suite to cover all four — see §4 and §5 (Layer 3).
+2. **Is v2 single-user or multi-user collaborative?** *Hiring contact: "Multi-user as proposals are typically worked on by multiple people at all firms ie proposals writer, engineers, principles, etc."* V2 is multi-user. The §7 priority order now puts auth + Postgres + collab data layer at #1; we designed V1's per-block revision stack to migrate cleanly to an operation log (attributed, timestamped). The persistence boundary in `lib/persistence.ts` is the single swap point.
+3. **What's in the KB?** *Hiring contact: "A large part of a customer's KB is past proposals … we've included 5 proposals for MECO. You can pick one as the proposal you're working on and treat the others as past proposals in the knowledge base."* We use the 5 MECO PDFs at `ExampleProposals/MECOProposals/`, with the active doc excluded by SHA-256 hash at runtime so it's never fed to itself as past-work context.
 
 ---
 

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Buoyant Proposal Editor",
+  title: "AI Proposal Editor",
   description:
     "Fidelity-first AI editor for civil-engineering proposals. Track Changes for PDFs.",
 };

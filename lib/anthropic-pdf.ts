@@ -1,10 +1,10 @@
 /**
  * Anthropic PDF input — abstraction over URL-fetch vs. base64 vs. Files API.
  *
- * The proxy at hiring-proxy.trybuoyant.ai SHOULD pass through Anthropic's
- * native PDF support, but we don't know which input form works until we
- * test. This module lets us swap with a single config flag (env override or
- * runtime detection) instead of rewriting the parse + edit routes.
+ * The hiring proxy SHOULD pass through Anthropic's native PDF support, but
+ * we don't know which input form works until we test. This module lets us
+ * swap with a single config flag (env override or runtime detection)
+ * instead of rewriting the parse + edit routes.
  *
  * Strategy:
  *   1. URL primary — let the model fetch the PDF directly. Cheapest, fastest,

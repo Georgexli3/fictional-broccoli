@@ -8,18 +8,17 @@ import { z } from "zod";
  *
  * Vercel auto-injects BLOB_READ_WRITE_TOKEN / KV_* once the corresponding
  * integrations are provisioned in the dashboard. The Anthropic values come
- * from Eric (the take-home contact). OpenAI base URL is included as a
+ * from the take-home hiring contact. OpenAI base URL is included as a
  * commented option for future provider switching.
  */
 const envSchema = z.object({
-  // Buoyant proxy.
+  // Hiring-proxy auth.
   ANTHROPIC_API_KEY: z
     .string()
     .min(1, "ANTHROPIC_API_KEY is required (the proxy auth token)"),
   ANTHROPIC_BASE_URL: z
     .string()
-    .url()
-    .default("https://hiring-proxy.trybuoyant.ai/anthropic"),
+    .url("ANTHROPIC_BASE_URL is required (the hiring-proxy URL from the brief)"),
 
   // Vercel storage. Optional in local dev so the app boots without them
   // (parse/edit/export will fail loudly when invoked, which is correct).
