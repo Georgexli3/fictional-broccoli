@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { Link2, Lock } from "lucide-react";
 import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
@@ -57,9 +57,23 @@ export function BlockView({
   const selectedBlockId = useSessionStore((s) => s.selectedBlockId);
   const selectBlock = useSessionStore((s) => s.selectBlock);
   const setHoveredBlock = useSessionStore((s) => s.setHoveredBlock);
+  const setIntentPrefill = useSessionStore((s) => s.setIntentPrefill);
+  const kbHint = useSessionStore((s) => s.kbHints[block.id]);
 
   const isLocked = !block.editable;
   const selected = selectedBlockId === block.id;
+
+  const onKbHintClick = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      if (isLocked) return;
+      // Set the prefill BEFORE selecting so the EditComposer's mount effect
+      // sees the intent and auto-fires a reference_past_work edit.
+      setIntentPrefill({ blockId: block.id, intent: "reference_past_work" });
+      selectBlock(block.id);
+    },
+    [block.id, isLocked, selectBlock, setIntentPrefill],
+  );
 
   const onClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -112,6 +126,18 @@ export function BlockView({
             <span>·</span>
             <span className="text-accent">edited</span>
           </>
+        )}
+        {kbHint && !isLocked && !selected && (
+          <button
+            type="button"
+            data-no-select
+            onClick={onKbHintClick}
+            title={kbHint.preview}
+            className="border-border hover:bg-accent/10 hover:border-accent/40 ml-auto inline-flex max-w-[14rem] items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium leading-tight transition"
+          >
+            <Link2 className="h-3 w-3 shrink-0" />
+            <span className="truncate">{kbHint.projectLabel}</span>
+          </button>
         )}
       </div>
 
