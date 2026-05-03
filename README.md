@@ -276,7 +276,7 @@ This sits more honestly with the rest of the design. Proposal-team review workfl
 | 5 | localStorage quota exceeded | `try/catch` around `setItem` | Banner with one-click "Clear oldest sessions" |
 | 6 | Parser returns malformed structure | Zod validation rejects | Error UI in right pane with Reparse button |
 | 7 | Streaming edit drops mid-response | SSE error | Retry button preserving full request context |
-| 8 | Concurrent edits on same block | UI invariant | Composer disabled during pending |
+| 8 | Concurrent edits — user clicks another block mid-stream | `AbortController` per submit, aborted on composer unmount | In-flight stream is cancelled cleanly; AbortError treated as a no-op so no spurious "Edit failed" toast |
 
 ### Tier 2 — Soft-fail / graceful degradation
 
@@ -299,7 +299,7 @@ This sits more honestly with the rest of the design. Proposal-team review workfl
 | 18 | Browser crash loses pending (un-accepted) edit | Pending proposals only persist on Accept |
 | 19 | Mobile / small screen | V1 is desktop-first; banner < 1024px would be V1.5 |
 | 20 | "Reference past work" hallucination | Mitigated by KB grounding + system prompt; not eliminated. Detection requires LLM-judge offline eval (scaffolded; not run for V1) |
-| 21 | **Long / heavy PDFs may exceed 300s Vercel function ceiling** | The AlphaCM Windsor proposal (24-page InDesign with TOC + multi-section + appendices) consistently runs the parse + 1 retry past the 300s Vercel Hobby function maxDuration. Resolved by streaming the parse response so the connection stays alive during long generations — that's the V1.5 streamed-parse item. Dixon SOQ (24 pages, simpler structure) parses cleanly within budget. README's "demo flow" runs against Dixon. |
+| 21 | **Long / heavy PDFs may exceed 300s Vercel function ceiling** | The AlphaCM Windsor proposal (24-page InDesign with TOC + multi-section + appendices) consistently runs the parse + 1 retry past the 300s Vercel Hobby function maxDuration. Resolved by streaming the parse response so the connection stays alive during long generations — that's the V1.5 streamed-parse item. Dixon SOQ (8 pages, simpler structure) parses cleanly within budget. README's "demo flow" runs against Dixon. |
 | 22 | **Anthropic occasionally returns `blocks` as a JSON-encoded string** (sometimes with malformed inner quotes) | Surfaced in production e2e. Mitigated with multi-unwrap defensive coercion + 2-attempt retry with progressively sharper instruction. Long-term fix: switch tool-use array output to JSONL streaming; that's also the V1.5 streamed-parse work. |
 
 ### What I'd check before letting a paying customer use it
@@ -425,7 +425,7 @@ Threaded comments + @-mentions on edits, role-based permissions (only principals
 
 ## Token-cost analysis
 
-- **Parse** (per new PDF): ~$0.20 first call; $0 on KV-cache hit (24-page MECO).
+- **Parse** (per new PDF): ~$0.20 first call; $0 on KV-cache hit (8-page Dixon SOQ; longer MECOs cost proportionally more).
 - **Edit** (Sonnet 4.6, KB inlined): first edit ~$0.013 (cache write), subsequent ~$0.005 each (cache read).
 - **Sample 20-edit session**: ~$0.10 in compute.
 - **KB build** (one-time): ~$1 for parse + distill + voice synthesis on all 5 MECO PDFs. Cached forever (committed to repo).
