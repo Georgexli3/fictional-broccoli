@@ -7,7 +7,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
 
-type Format = "markdown" | "docx" | "clean" | "annotated";
+type Format = "markdown" | "docx" | "docx-clean" | "clean" | "annotated";
 
 export function ExportPopover() {
   const meta = useSessionStore((s) => s.meta);
@@ -79,14 +79,27 @@ export function ExportPopover() {
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
-          <div className="border-border bg-background absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-md border shadow-lg">
+          <div className="border-border bg-background absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-md border shadow-lg">
+            <div className="bg-muted/40 border-border text-muted-foreground border-b px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide">
+              Word
+            </div>
             <ExportRow
               icon={<FileType className="h-4 w-4" />}
-              title="Word (.docx) with track changes"
-              description="Edits encoded as native Word revisions — accept/reject in the Review pane. Recommended."
+              title="Word (.docx) — with track changes"
+              description="Edits encoded as native Word revisions. Reviewers accept/reject each change in the Review pane. Recommended for team review."
               busy={busy === "docx"}
               onClick={() => void exportAs("docx")}
             />
+            <ExportRow
+              icon={<FileType className="h-4 w-4" />}
+              title="Word (.docx) — clean copy"
+              description="Final text with all edits applied. No track-change markup. Use this when sending a polished copy to a client."
+              busy={busy === "docx-clean"}
+              onClick={() => void exportAs("docx-clean")}
+            />
+            <div className="bg-muted/40 border-border text-muted-foreground border-y px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide">
+              Other
+            </div>
             <ExportRow
               icon={<FileCode className="h-4 w-4" />}
               title="Markdown"

@@ -32,7 +32,7 @@ export type TrackEvent =
   | { name: "edit_redone" }
   | {
       name: "export_clicked";
-      format: "annotated" | "clean" | "markdown" | "docx";
+      format: "annotated" | "clean" | "markdown" | "docx" | "docx-clean";
     }
   | { name: "session_resumed"; ageMinutes: number; editCount: number }
   | { name: "error_surfaced"; kind: string; messageHash: string };

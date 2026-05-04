@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const requestBodySchema = z.object({
-  format: z.enum(["markdown", "docx", "clean", "annotated"]),
+  format: z.enum(["markdown", "docx", "docx-clean", "clean", "annotated"]),
   title: z.string().default("Edited Proposal"),
   doc: documentModelSchema,
   /** Required for 'annotated' format; ignored otherwise. */
@@ -66,8 +66,11 @@ export async function POST(request: Request) {
         },
       });
     }
-    case "docx": {
-      const bytes = await exportDocx(body.doc, body.title);
+    case "docx":
+    case "docx-clean": {
+      const mode = body.format === "docx-clean" ? "clean" : "tracked";
+      const bytes = await exportDocx(body.doc, body.title, { mode });
+      const filenameSuffix = mode === "clean" ? "clean" : "edited";
       return new Response(
         new Blob([bytes as unknown as ArrayBuffer], {
           type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -76,7 +79,7 @@ export async function POST(request: Request) {
           headers: {
             "Content-Type":
               "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "Content-Disposition": `attachment; filename="${slug(body.title)}-edited.docx"`,
+            "Content-Disposition": `attachment; filename="${slug(body.title)}-${filenameSuffix}.docx"`,
             "Cache-Control": "no-store",
           },
         },

@@ -1,15 +1,21 @@
 /**
- * V1.7: DOCX export with NATIVE Word track changes.
+ * DOCX export — supports two output modes:
  *
- * The killer feature for proposal-review workflows: every accepted edit is
- * encoded as a Word `<w:ins>` / `<w:del>` revision pair (via the `docx`
- * package's `InsertedTextRun` / `DeletedTextRun`). When the user opens the
- * file in Word it renders as proper redline markup with the Review pane
- * showing each change for accept/reject — no extra tooling needed.
+ *   - "tracked" (default): every accepted edit is encoded as a Word
+ *     `<w:ins>` / `<w:del>` revision pair via the `docx` package's
+ *     `InsertedTextRun` / `DeletedTextRun`. The file opens in Word with
+ *     redline markup and the Review pane lets reviewers accept/reject
+ *     each change. This is the headline format for proposal-review
+ *     workflows where legal/sales sign off in Word.
  *
- * For unedited blocks we emit plain `TextRun`s. For edited blocks we diff
- * the original revision against the current text and emit a sequence of
- * runs that interleave equal / inserted / deleted segments.
+ *   - "clean": just renders the current text of every block as plain
+ *     `TextRun`s. No `<w:ins>` / `<w:del>` markup, no redline. Use this
+ *     when you want a polished final copy to send a client without any
+ *     visible edit history. Equivalent to "Accept All Changes" in Word.
+ *
+ * For unedited blocks both modes emit plain `TextRun`s. For edited
+ * blocks, "tracked" mode runs the diff and emits insert/delete pairs;
+ * "clean" mode emits only the current text.
  *
  * Block kinds map to Word styles: cover → TITLE, heading → HEADING_1,
  * list_item → bulleted ListParagraph, caption → italic small text. figure
@@ -33,10 +39,24 @@ import { currentText, type Block, type DocumentModel } from "../doc-model";
 
 const AUTHOR = "AI Editor";
 
+export type DocxExportMode = "tracked" | "clean";
+
+export interface DocxExportOptions {
+  /**
+   * "tracked" (default) emits Word track-changes markup so reviewers can
+   * accept/reject each edit in Word's Review pane. "clean" emits only the
+   * current accepted text — equivalent to a final copy with all changes
+   * accepted, no visible edit history.
+   */
+  mode?: DocxExportMode;
+}
+
 export async function exportDocx(
   doc: DocumentModel,
   title: string,
+  options: DocxExportOptions = {},
 ): Promise<Uint8Array> {
+  const mode: DocxExportMode = options.mode ?? "tracked";
   const paragraphs: Paragraph[] = [];
 
   // Cover line.
@@ -55,7 +75,10 @@ export async function exportDocx(
       spacing: { after: 480 },
       children: [
         new TextRun({
-          text: `AI-edited — ${new Date().toLocaleDateString()}`,
+          text:
+            mode === "clean"
+              ? `Final copy — ${new Date().toLocaleDateString()}`
+              : `AI-edited — ${new Date().toLocaleDateString()}`,
           italics: true,
           size: 18,
           color: "666666",
@@ -64,7 +87,8 @@ export async function exportDocx(
     }),
   );
 
-  // Track-change ids must be unique across the document.
+  // Track-change ids must be unique across the document. Only used in
+  // "tracked" mode but declared here for scope.
   let revisionId = 1;
   const lastEditByBlock = mapLastEditTime(doc);
 
@@ -74,7 +98,9 @@ export async function exportDocx(
     const text = currentText(block);
     if (!text.trim()) continue;
 
-    const hasEdit = block.revisions.length > 1;
+    // In "clean" mode every block — edited or not — emits a single plain
+    // TextRun with the current text. No track-change markup at all.
+    const hasEdit = mode === "tracked" && block.revisions.length > 1;
     const original = hasEdit ? block.revisions[0]?.text ?? "" : text;
     const editDate = lastEditByBlock.get(block.id) ?? new Date();
 

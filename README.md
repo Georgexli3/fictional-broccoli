@@ -120,9 +120,10 @@ Plus a single `kb/voice.synthesized.md` (~600–1,500 tokens) generated from the
 
 **Prompt caching:** the entire KB block is wrapped with `cache_control: ephemeral`. After the first edit in a session, subsequent edits read cached input at ~10% price. Sample 20-edit session post-cache cost: ~$0.10 in compute. Dominant cost is the one-time parse (~$0.20 per new PDF, $0 on KV-cache hit).
 
-### Export: 4 formats; DOCX with track changes is the headline
+### Export: 5 formats; DOCX with track changes is the headline
 
-- **Word (.docx) with track changes** *(recommended, V1.7)* — every accepted edit becomes a real Word `<w:ins>` / `<w:del>` revision via the `docx` package's `InsertedTextRun` / `DeletedTextRun`. When the file opens in Word it shows as proper redline markup with the Review pane offering accept/reject per change, attributed to "AI Editor." This is the format proposal teams actually need — they review in Word.
+- **Word (.docx) with track changes** *(recommended for review, V1.7)* — every accepted edit becomes a real Word `<w:ins>` / `<w:del>` revision via the `docx` package's `InsertedTextRun` / `DeletedTextRun`. When the file opens in Word it shows as proper redline markup with the Review pane offering accept/reject per change, attributed to "AI Editor." This is the format proposal teams actually need — they review in Word.
+- **Word (.docx) clean copy** *(V1.7.6)* — same Word file structure, but every block is rendered as plain text with all edits already applied and zero `<w:ins>` / `<w:del>` markup. Equivalent to "Accept All Changes" in Word. Use this when sending a polished final to a client who shouldn't see the edit history. The Export menu groups both Word options under a "Word" header so the choice is obvious.
 - **Markdown** — clean text for Word / Notion / Slack paste.
 - **Clean PDF** — pdf-lib regenerates a fresh PDF from the edited doc model. Loses original branding; gains accuracy on edited text content.
 - **Annotated Original** — overlay numbered colored markers on the original PDF + append a Changes Summary page enumerating every edit with before/after text. Preserves branding 100%; never modifies content streams. For review/redlining workflows.
